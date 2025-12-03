@@ -42,6 +42,10 @@ const UserScheme = new mongoose.Schema(
             enum: typeValues,
             default: UserType.PLAYER.value
         }]
+        ,
+        favourites: [{
+            type: String,
+        }]
     },
     {
         timestamps: true,

@@ -9,6 +9,7 @@ const {
     registerUser,
     generateUserToken,
     updateUser,
+    updateFavourites,
     deleteUser
 } = require('../controllers/users')
 
@@ -29,6 +30,12 @@ router.post('/login', handleError(req =>
 router.put('/:id', handleUserAccess(req =>
     updateUser(req.params.id, req.body)
 ))
+
+// Update favourites (player or admin only)
+router.put('/:id/favourites', authMiddleware, handleUserAccess(req =>
+  updateFavourites(req.params.id, req.body.favourites)
+))
+
 
 router.delete('/:id', adminMiddleware, handleError(req =>
     deleteUser(req.params.id)

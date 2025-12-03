@@ -61,12 +61,34 @@ const updateUser = async (id, changes) => {
   delete changes.email
   delete changes.createdAt
   delete changes.updatedAt
+  delete changes.favourites
   const result = await usersModel.findByIdAndUpdate(id, changes, { new: true })
   if (!result) {
     throw new ApiError(ErrorCode.NOT_FOUND)
   }
   return userView(result)
 }
+
+// Add at the top with the others
+const updateFavourites = async (id, favourites) => {
+  if (!Array.isArray(favourites)) {
+    throw new ApiError(ErrorCode.BAD_REQUEST, 'favourites must be an array')
+  }
+
+  // Only update favourites
+  const result = await usersModel.findByIdAndUpdate(
+    id,
+    { favourites },
+    { new: true }
+  )
+
+  if (!result) {
+    throw new ApiError(ErrorCode.NOT_FOUND, 'User not found')
+  }
+
+  return userView(result)
+}
+
 
 const deleteUser = async (id) => {
   const result = await usersModel.findByIdAndDelete(id)
@@ -86,5 +108,6 @@ module.exports = {
   registerUser,
   generateUserToken,
   updateUser,
+  updateFavourites,     
   deleteUser
 }
