@@ -8,7 +8,7 @@ const handleUserAccess = (targetFunction) =>
         await authMiddleware(req, res, async () =>
             handleError(async () => {
                 const tokenBody = req.tokenBody
-                const isSameUser = req.params.id === tokenBody.id
+                const isSameUser = String(req.params.id) === String(tokenBody.id)
                 const isAdmin = tokenBody.roles.includes(UserType.ADMIN.value)
                 if (!isSameUser && !isAdmin) {
                     throw new ApiError(ErrorCode.UNAUTHORIZED, 'Insufficient permissions')
