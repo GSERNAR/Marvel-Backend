@@ -41,7 +41,7 @@ const ModuleScheme = new Schema(
         chance: [{
             type: String
         }],
-        module: {
+        moduleType: {
             type: String
         },
         character: {
