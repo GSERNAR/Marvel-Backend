@@ -14,7 +14,7 @@ const ModuleScheme = new Schema(
         level: {
             type: Number
         },
-        bonusDamage: {
+        RelatedPower: {
             type: String,
         },
         type: {
