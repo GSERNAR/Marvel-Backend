@@ -29,6 +29,7 @@ const SheetScheme = new mongoose.Schema(
 
     // Unlocks
     unlockedPowerIds: { type: Array, default: [] },
+    unlockedFormIds: { type: Array, default: [] },
     progressionPicks: { type: Object, default: {} },
 
     // Text fields

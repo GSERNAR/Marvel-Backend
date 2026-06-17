@@ -20,8 +20,8 @@ const updateSheet = async (userId, sheetId, body) => {
   delete body.userId
   const sheet = await sheetsModel.findOneAndUpdate(
     { _id: sheetId, userId },
-    body,
-    { new: true }
+    { $set: body },
+    { new: true, strict: false }
   )
   if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
   return sheet
