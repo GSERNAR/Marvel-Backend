@@ -29,6 +29,27 @@ const SheetScheme = new mongoose.Schema(
     // Per-form SP (multi-form characters like Moon Knight / Agent Venom)
     formSkillPoints: { type: Object, default: {} },
 
+    // Cable: Techno-Organic Virus accumulation (0–20, death at 20)
+    toVirus: { type: Number, default: 0 },
+
+    // Black Panther: Kinetic Points (0–10)
+    kineticPoints: { type: Number, default: 0 },
+
+    // Hulk: Rage state and Rampage wisdom check difficulty
+    isInRage:               { type: Boolean, default: false },
+    rampageCheckDifficulty: { type: Number,  default: 3 },
+
+    // Wolverine: Fury system
+    furyPoints:         { type: Number,  default: 0 },
+    isInFury:           { type: Boolean, default: false },
+    furyTurnsRemaining: { type: Number,  default: 0 },
+
+    // Thor: Asgardian Energy + Warrior's Madness
+    asgardianEnergy:  { type: Number,  default: 2 },
+    isWarriorsMadness:{ type: Boolean, default: false },
+    isBerserkersRage: { type: Boolean, default: false },
+    wisdomFailCount:  { type: Number,  default: 0 },
+
     // Skills (extra ranks bought with SP per skill)
     skillRanks: { type: Object, default: {} },
 
