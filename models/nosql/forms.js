@@ -74,6 +74,16 @@ const FormScheme = new Schema(
         hpperlevel: {
             type: Number,
             default: 0
+        },
+        // summonCost > 0 means this companion must be summoned (not always present)
+        summonCost: {
+            type: Number,
+            default: 0
+        },
+        // e.g. [{ level: 6, max: 1 }, { level: 10, max: 2 }, { level: 18, max: 3 }]
+        maxInstancesByLevel: {
+            type: Array,
+            default: []
         }
     },
     {
