@@ -13,6 +13,14 @@ const {
     deleteUser
 } = require('../controllers/users')
 
+const {
+    getSheets,
+    getSheet,
+    createSheet,
+    updateSheet,
+    deleteSheet
+} = require('../controllers/sheets')
+
 router.get('/', handleError(getUsers))
 
 router.get('/:id', authMiddleware, handleError(req =>
@@ -39,6 +47,27 @@ router.put('/:id/favourites', authMiddleware, handleUserAccess(req =>
 
 router.delete('/:id', adminMiddleware, handleError(req =>
     deleteUser(req.params.id)
+))
+
+// Sheets (scoped to user)
+router.get('/:id/sheets', handleUserAccess(req =>
+    getSheets(req.params.id)
+))
+
+router.post('/:id/sheets', handleUserAccess(req =>
+    createSheet(req.params.id, req.body)
+))
+
+router.get('/:id/sheets/:sheetId', handleUserAccess(req =>
+    getSheet(req.params.id, req.params.sheetId)
+))
+
+router.put('/:id/sheets/:sheetId', handleUserAccess(req =>
+    updateSheet(req.params.id, req.params.sheetId, req.body)
+))
+
+router.delete('/:id/sheets/:sheetId', handleUserAccess(req =>
+    deleteSheet(req.params.id, req.params.sheetId)
 ))
 
 module.exports = router

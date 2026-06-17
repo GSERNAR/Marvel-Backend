@@ -5,6 +5,7 @@ const { powersModel } = require('./nosql/powers')
 const { attributeModel } = require('./nosql/attributes')
 const { attributeValuesModel, attributeStacksModel } = require('./nosql/attributeStacks')
 const { ModulesModel } = require('./nosql/modules')
+const { sheetsModel } = require('./nosql/sheets')
 
 module.exports = {
     usersModel,
@@ -14,5 +15,6 @@ module.exports = {
     ModulesModel,
     attributeModel,
     attributeValuesModel,
-    attributeStacksModel
+    attributeStacksModel,
+    sheetsModel
 }
