@@ -67,6 +67,13 @@ const FormScheme = new Schema(
         noSkillUpgrade: {
             type: Boolean,
             default: false
+        },
+        specialcomp: [{
+            type: String
+        }],
+        hpperlevel: {
+            type: Number,
+            default: 0
         }
     },
     {

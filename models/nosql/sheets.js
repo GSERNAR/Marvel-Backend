@@ -50,6 +50,10 @@ const SheetScheme = new mongoose.Schema(
     isBerserkersRage: { type: Boolean, default: false },
     wisdomFailCount:  { type: Number,  default: 0 },
 
+    // Companion mini-sheets (keyed by companion character ID)
+    companionHp: { type: Object, default: {} },
+    companionPp: { type: Object, default: {} },
+
     // Angel / Archangel: Holy Points and transformation
     holyPoints:              { type: Number,  default: 0 },
     isArchangel:             { type: Boolean, default: false },
