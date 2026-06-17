@@ -63,6 +63,10 @@ const FormScheme = new Schema(
         }],
         character: {
             type: String
+        },
+        noSkillUpgrade: {
+            type: Boolean,
+            default: false
         }
     },
     {

@@ -20,9 +20,14 @@ const SheetScheme = new mongoose.Schema(
     shieldCredits: { type: Number, default: 0 },
 
     // HP / PP
-    currentHp: { type: Number, default: null },
-    currentPp: { type: Number, default: null },
+    currentHp:      { type: Number, default: null },
+    currentPp:      { type: Number, default: null },
+    webCharges:     { type: Number, default: 20 },
+    webCartridges:  { type: Number, default: 10 },
     progressionHpBonus: { type: Number, default: 0 },
+
+    // Per-form SP (multi-form characters like Moon Knight / Agent Venom)
+    formSkillPoints: { type: Object, default: {} },
 
     // Skills (extra ranks bought with SP per skill)
     skillRanks: { type: Object, default: {} },
