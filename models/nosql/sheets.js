@@ -50,6 +50,11 @@ const SheetScheme = new mongoose.Schema(
     isBerserkersRage: { type: Boolean, default: false },
     wisdomFailCount:  { type: Number,  default: 0 },
 
+    // Angel / Archangel: Holy Points and transformation
+    holyPoints:              { type: Number,  default: 0 },
+    isArchangel:             { type: Boolean, default: false },
+    archangelTurnsRemaining: { type: Number,  default: 0 },
+
     // Skills (extra ranks bought with SP per skill)
     skillRanks: { type: Object, default: {} },
 
