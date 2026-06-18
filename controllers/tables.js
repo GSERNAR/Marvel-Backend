@@ -212,7 +212,17 @@ const getAbsorbTargets = async (userId, tableId) => {
   const formIds = [...new Set(sheets.map(s => s.formId).filter(Boolean))]
   // Fetch as full Mongoose docs (not lean) so toJSON() correctly serializes Map fields (stats, skills)
   const formDocs = await formsModel.find({ _id: { $in: formIds } })
-  const formMap = Object.fromEntries(formDocs.map(f => [String(f._id), JSON.parse(JSON.stringify(f))]))
+  const formMap = {}
+  formDocs.forEach(f => {
+    formMap[String(f._id)] = {
+      stats: Object.fromEntries(f.stats || []),
+      skills: Object.fromEntries(f.skills || []),
+      specialSkills: Object.fromEntries(f.specialSkills || []),
+      abilities: f.abilities || [],
+      powers: f.powers || [],
+      image: f.image,
+    }
+  })
 
   // Fall back to character's defaultForm (or first form) for sheets without formId
   const noFormSheets = sheets.filter(s => !s.formId)
@@ -221,14 +231,22 @@ const getAbsorbTargets = async (userId, tableId) => {
     const charIds = [...new Set(noFormSheets.map(s => s.characterId).filter(Boolean))]
     const chars = await charactersModel.find({ _id: { $in: charIds } }, 'defaultForm forms').lean()
     chars.forEach(c => {
-      // Use defaultForm first, then fall back to first entry in forms array
       const fallbackId = c.defaultForm || (c.forms && c.forms[0]) || null
       if (fallbackId) defaultFormMap[String(c._id)] = String(fallbackId)
     })
     const fallbackFormIds = Object.values(defaultFormMap)
     if (fallbackFormIds.length > 0) {
       const fallbackFormDocs = await formsModel.find({ _id: { $in: fallbackFormIds } })
-      fallbackFormDocs.forEach(f => { formMap[String(f._id)] = JSON.parse(JSON.stringify(f)) })
+      fallbackFormDocs.forEach(f => {
+        formMap[String(f._id)] = {
+          stats: Object.fromEntries(f.stats || []),
+          skills: Object.fromEntries(f.skills || []),
+          specialSkills: Object.fromEntries(f.specialSkills || []),
+          abilities: f.abilities || [],
+          powers: f.powers || [],
+          image: f.image,
+        }
+      })
     }
   }
 
@@ -263,8 +281,7 @@ const getAbsorbTargets = async (userId, tableId) => {
     const unlockedSet = new Set((sheet.unlockedPowerIds ?? []).map(String))
     const powers = form
       ? (form.powers ?? [])
-          // NPC sheets skip the unlock flow — show all form powers; players only see unlocked ones
-          .filter(id => target.isNpc || unlockedSet.has(String(id)))
+          .filter(id => unlockedSet.has(String(id)))
           .map(id => powerMap[String(id)])
           .filter(Boolean)
           .map(p => ({ _id: String(p._id), name: p.name, level: p.level ?? 0, description: p.description, type: p.type, skillCheck: p.skillCheck, chance: p.chance }))
