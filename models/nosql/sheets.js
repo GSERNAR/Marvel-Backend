@@ -57,6 +57,14 @@ const SheetScheme = new mongoose.Schema(
     // Pickable companions chosen via progression (e.g. Ant-Man's giant ants)
     chosenCompIds: { type: Array, default: [] },
 
+    // Rogue: Absorption system
+    rogueStatSlots:    { type: Number, default: 0 },
+    rogueSkillSlots:   { type: Number, default: 0 },
+    rogueAbilitySlots: { type: Number, default: 0 },
+    roguePowerSlots:   { type: Array,  default: [0, 0] }, // each entry is max tier for that slot
+    rogueCurrentAbsorbed: { type: Object, default: null },
+    rogueAbsorbedHistory: { type: Array,  default: [] },
+
     // Angel / Archangel: Holy Points and transformation
     holyPoints:              { type: Number,  default: 0 },
     isArchangel:             { type: Boolean, default: false },
