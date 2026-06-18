@@ -204,6 +204,7 @@ const getAbsorbTargets = async (userId, tableId) => {
   }))
 
   const targets = [...memberEntries, ...oaaEntries]
+  console.log('[absorb] memberEntries:', memberEntries.length, '| oaaEntries:', oaaEntries.length, '| oaaSheetIds:', table.oaaSheetIds)
   if (targets.length === 0) return []
 
   const sheets = await sheetsModel.find({ _id: { $in: targets.map(t => t.sheetId) } }).lean()
@@ -238,36 +239,34 @@ const getAbsorbTargets = async (userId, tableId) => {
   const results = []
   for (const target of targets) {
     const sheet = sheetMap[target.sheetId]
-    if (!sheet) continue
+    if (!sheet) { console.log('[absorb] SKIP — no sheet for', target.sheetId); continue }
 
     const formId = sheet.formId || defaultFormMap[String(sheet.characterId)]
     const form = formId ? formMap[String(formId)] : null
-    if (!form) continue
+    console.log('[absorb] sheet:', sheet.displayName, '| formId:', formId, '| form found:', !!form)
 
     const hpBonus = sheet.progressionHpBonus ?? 0
-    const stats = Object.entries(form.stats || {})
-      .filter(([key]) => key !== 'combo')
-      .map(([key, val]) => ({
-        uniqueName: key, name: key,
-        value: key === 'hp' ? (val ?? 0) + hpBonus : (val ?? 0)
-      }))
-      .filter(s => s.value > 0)
+    const stats = form
+      ? Object.entries(form.stats || {})
+          .filter(([key]) => key !== 'combo')
+          .map(([key, val]) => ({ uniqueName: key, name: key, value: key === 'hp' ? (val ?? 0) + hpBonus : (val ?? 0) }))
+          .filter(s => s.value > 0)
+      : []
 
     const skillRanks = sheet.skillRanks || {}
-    const rawSkills = { ...(form.skills || {}), ...(form.specialSkills || {}) }
+    const rawSkills = form ? { ...(form.skills || {}), ...(form.specialSkills || {}) } : {}
     const skills = Object.entries(rawSkills)
       .map(([name, val]) => ({ name, value: (val ?? 0) + (skillRanks[name] ?? 0) }))
       .filter(s => s.value > 0)
 
     const unlockedSet = new Set((sheet.unlockedPowerIds ?? []).map(String))
-    const powers = (form.powers ?? [])
-      .filter(id => unlockedSet.has(String(id)))
-      .map(id => powerMap[String(id)])
-      .filter(Boolean)
-      .map(p => ({
-        _id: String(p._id), name: p.name, level: p.level ?? 0,
-        description: p.description, type: p.type, skillCheck: p.skillCheck, chance: p.chance
-      }))
+    const powers = form
+      ? (form.powers ?? [])
+          .filter(id => unlockedSet.has(String(id)))
+          .map(id => powerMap[String(id)])
+          .filter(Boolean)
+          .map(p => ({ _id: String(p._id), name: p.name, level: p.level ?? 0, description: p.description, type: p.type, skillCheck: p.skillCheck, chance: p.chance }))
+      : []
 
     results.push({
       memberId: target.memberId,
@@ -278,9 +277,9 @@ const getAbsorbTargets = async (userId, tableId) => {
       characterName: sheet.characterName,
       characterId: String(sheet.characterId),
       level: sheet.level ?? 1,
-      image: form.image ?? null,
+      image: form?.image ?? null,
       stats, skills,
-      abilities: form.abilities ?? [],
+      abilities: form?.abilities ?? [],
       powers,
     })
   }
@@ -289,6 +288,8 @@ const getAbsorbTargets = async (userId, tableId) => {
 
 // Find the right table for a given sheet and return absorb targets — no frontend guessing needed
 const getAbsorbTargetsForSheet = async (userId, sheetId) => {
+  console.log('[absorb] getAbsorbTargetsForSheet called — userId:', userId, 'sheetId:', sheetId)
+
   // Priority 1: table where this specific sheet is the active member sheet or an OAA NPC
   let table = await tablesModel.findOne({
     $or: [
@@ -296,16 +297,21 @@ const getAbsorbTargetsForSheet = async (userId, sheetId) => {
       { oaaSheetIds: String(sheetId) },
     ]
   })
+  console.log('[absorb] table by sheetId:', table ? table._id : 'NOT FOUND')
 
   // Priority 2: any table where this user is an accepted member (sheet not explicitly selected)
   if (!table) {
     table = await tablesModel.findOne({
       'members': { $elemMatch: { userId: String(userId), status: 'accepted' } }
     }).sort({ updatedAt: -1 })
+    console.log('[absorb] table by userId fallback:', table ? table._id : 'NOT FOUND')
   }
 
-  if (!table) return []
-  return getAbsorbTargets(userId, String(table._id))
+  if (!table) { console.log('[absorb] no table found — returning []'); return [] }
+
+  const results = await getAbsorbTargets(userId, String(table._id))
+  console.log('[absorb] results count:', results.length, results.map(r => r.displayName))
+  return results
 }
 
 module.exports = {
