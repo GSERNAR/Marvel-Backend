@@ -210,9 +210,9 @@ const getAbsorbTargets = async (userId, tableId) => {
   const sheetMap = Object.fromEntries(sheets.map(s => [String(s._id), s]))
 
   const formIds = [...new Set(sheets.map(s => s.formId).filter(Boolean))]
-  // Use JSON round-trip to force Mongoose Map types (stats, skills) into plain objects
-  const forms = await formsModel.find({ _id: { $in: formIds } }).lean()
-  const formMap = Object.fromEntries(forms.map(f => [String(f._id), JSON.parse(JSON.stringify(f))]))
+  // Fetch as full Mongoose docs (not lean) so toJSON() correctly serializes Map fields (stats, skills)
+  const formDocs = await formsModel.find({ _id: { $in: formIds } })
+  const formMap = Object.fromEntries(formDocs.map(f => [String(f._id), JSON.parse(JSON.stringify(f))]))
 
   // Fall back to character's defaultForm (or first form) for sheets without formId
   const noFormSheets = sheets.filter(s => !s.formId)
@@ -227,8 +227,8 @@ const getAbsorbTargets = async (userId, tableId) => {
     })
     const fallbackFormIds = Object.values(defaultFormMap)
     if (fallbackFormIds.length > 0) {
-      const fallbackForms = await formsModel.find({ _id: { $in: fallbackFormIds } }).lean()
-      fallbackForms.forEach(f => { formMap[String(f._id)] = JSON.parse(JSON.stringify(f)) })
+      const fallbackFormDocs = await formsModel.find({ _id: { $in: fallbackFormIds } })
+      fallbackFormDocs.forEach(f => { formMap[String(f._id)] = JSON.parse(JSON.stringify(f)) })
     }
   }
 
