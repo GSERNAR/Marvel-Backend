@@ -101,6 +101,8 @@ const SheetScheme = new mongoose.Schema(
       weaponSlots: { type: String, default: '' },
       consumableSlots: { type: String, default: '[]' },
       equipmentSlots:  { type: String, default: '[]' },
+      explosiveSlots:  { type: String, default: '[]' },
+      knifeHarness:    { type: String, default: '0' },
       customImmunities: { type: String, default: '' }
     },
 
