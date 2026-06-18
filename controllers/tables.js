@@ -1,4 +1,4 @@
-const { tablesModel, sheetsModel, usersModel } = require('../models')
+const { tablesModel, sheetsModel, usersModel, formsModel, powersModel, charactersModel } = require('../models')
 const { ApiError, ErrorCode } = require('../common/apiError')
 
 const getTables = async (userId) => {
@@ -185,10 +185,108 @@ const getTableSheet = async (oaaId, tableId, sheetId) => {
   return sheet
 }
 
+const getAbsorbTargets = async (userId, tableId) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+
+  const requester = table.members.find(m => String(m.userId) === String(userId) && m.status === 'accepted')
+  if (!requester) throw new ApiError(ErrorCode.FORBIDDEN, 'Not an accepted member')
+
+  const targets = table.members.filter(m =>
+    m.status === 'accepted' && m.sheetId && String(m.userId) !== String(userId)
+  )
+  if (targets.length === 0) return []
+
+  const sheetIds = targets.map(m => m.sheetId)
+  const sheets = await sheetsModel.find({ _id: { $in: sheetIds } }).lean()
+  const sheetMap = Object.fromEntries(sheets.map(s => [String(s._id), s]))
+
+  const formIds = [...new Set(sheets.map(s => s.formId).filter(Boolean))]
+  const forms = await formsModel.find({ _id: { $in: formIds } }).lean()
+  const formMap = Object.fromEntries(forms.map(f => [String(f._id), f]))
+
+  // For sheets without formId, fall back to character's defaultForm
+  const noFormSheets = sheets.filter(s => !s.formId)
+  const defaultFormMap = {}
+  if (noFormSheets.length > 0) {
+    const charIds = [...new Set(noFormSheets.map(s => s.characterId).filter(Boolean))]
+    const chars = await charactersModel.find({ _id: { $in: charIds } }, 'defaultForm').lean()
+    const fallbackFormIds = chars.map(c => String(c.defaultForm)).filter(Boolean)
+    if (fallbackFormIds.length > 0) {
+      const fallbackForms = await formsModel.find({ _id: { $in: fallbackFormIds } }).lean()
+      fallbackForms.forEach(f => { formMap[String(f._id)] = f })
+    }
+    chars.forEach(c => { defaultFormMap[String(c._id)] = String(c.defaultForm) })
+  }
+
+  // Collect all power IDs from the forms we have
+  const allPowerIds = new Set()
+  Object.values(formMap).forEach(f => (f.powers ?? []).forEach(id => allPowerIds.add(String(id))))
+  const powerObjs = allPowerIds.size > 0
+    ? await powersModel.find({ _id: { $in: [...allPowerIds] } }).lean()
+    : []
+  const powerMap = Object.fromEntries(powerObjs.map(p => [String(p._id), p]))
+
+  const results = []
+  for (const target of targets) {
+    const sheet = sheetMap[String(target.sheetId)]
+    if (!sheet) continue
+
+    const formId = sheet.formId || defaultFormMap[String(sheet.characterId)]
+    const form = formId ? formMap[String(formId)] : null
+    if (!form) continue
+
+    // Stats: convert Map→array, apply progressionHpBonus, exclude combo
+    const hpBonus = sheet.progressionHpBonus ?? 0
+    const stats = Object.entries(form.stats || {})
+      .filter(([key]) => key !== 'combo')
+      .map(([key, val]) => ({
+        uniqueName: key,
+        name: key,
+        value: key === 'hp' ? (val ?? 0) + hpBonus : (val ?? 0)
+      }))
+      .filter(s => s.value > 0)
+
+    // Skills: merge form.skills + form.specialSkills, add skillRanks
+    const skillRanks = sheet.skillRanks || {}
+    const rawSkills = { ...(form.skills || {}), ...(form.specialSkills || {}) }
+    const skills = Object.entries(rawSkills)
+      .map(([name, val]) => ({ name, value: (val ?? 0) + (skillRanks[name] ?? 0) }))
+      .filter(s => s.value > 0)
+
+    // Powers: only unlocked
+    const unlockedSet = new Set((sheet.unlockedPowerIds ?? []).map(String))
+    const powers = (form.powers ?? [])
+      .filter(id => unlockedSet.has(String(id)))
+      .map(id => powerMap[String(id)])
+      .filter(Boolean)
+      .map(p => ({
+        _id: String(p._id), name: p.name, level: p.level ?? 0,
+        description: p.description, type: p.type, skillCheck: p.skillCheck, chance: p.chance
+      }))
+
+    results.push({
+      memberId: target.userId,
+      memberUsername: target.username,
+      sheetId: String(target.sheetId),
+      displayName: sheet.displayName,
+      characterName: sheet.characterName,
+      characterId: String(sheet.characterId),
+      level: sheet.level ?? 1,
+      image: form.image ?? null,
+      stats,
+      skills,
+      abilities: form.abilities ?? [],
+      powers,
+    })
+  }
+  return results
+}
+
 module.exports = {
   getTables, getTable, createTable, deleteTable,
   inviteMember, respondToInvitation, selectSheet,
   addOaaSheet, removeOaaSheet,
   requestSheet, approveSheetRequest,
-  getTableSheet,
+  getTableSheet, getAbsorbTargets,
 }

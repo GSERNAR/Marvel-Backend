@@ -7,7 +7,7 @@ const {
   inviteMember, respondToInvitation, selectSheet,
   addOaaSheet, removeOaaSheet,
   requestSheet, approveSheetRequest,
-  getTableSheet,
+  getTableSheet, getAbsorbTargets,
 } = require('../controllers/tables')
 
 router.get('/', authMiddleware, handleError(req => getTables(req.tokenBody.id)))
@@ -48,6 +48,10 @@ router.post('/:id/approve-sheet', authMiddleware, handleError(req =>
 
 router.get('/:id/sheets/:sheetId', authMiddleware, handleError(req =>
   getTableSheet(req.tokenBody.id, req.params.id, req.params.sheetId)
+))
+
+router.get('/:id/absorb-targets', authMiddleware, handleError(req =>
+  getAbsorbTargets(req.tokenBody.id, req.params.id)
 ))
 
 module.exports = router
