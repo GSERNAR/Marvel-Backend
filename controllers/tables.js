@@ -204,7 +204,6 @@ const getAbsorbTargets = async (userId, tableId) => {
   }))
 
   const targets = [...memberEntries, ...oaaEntries]
-  console.log('[absorb] memberEntries:', memberEntries.length, '| oaaEntries:', oaaEntries.length, '| oaaSheetIds:', table.oaaSheetIds)
   if (targets.length === 0) return []
 
   const sheets = await sheetsModel.find({ _id: { $in: targets.map(t => t.sheetId) } }).lean()
@@ -214,19 +213,22 @@ const getAbsorbTargets = async (userId, tableId) => {
   const forms = await formsModel.find({ _id: { $in: formIds } }).lean()
   const formMap = Object.fromEntries(forms.map(f => [String(f._id), f]))
 
-  // Fall back to character's defaultForm for sheets without formId
+  // Fall back to character's defaultForm (or first form) for sheets without formId
   const noFormSheets = sheets.filter(s => !s.formId)
   const defaultFormMap = {}
   if (noFormSheets.length > 0) {
     const charIds = [...new Set(noFormSheets.map(s => s.characterId).filter(Boolean))]
-    const chars = await charactersModel.find({ _id: { $in: charIds } }, 'defaultForm').lean()
-    // Only include characters that actually have a defaultForm (String(null) === 'null' is truthy — must check first)
-    const fallbackFormIds = chars.filter(c => c.defaultForm).map(c => String(c.defaultForm))
+    const chars = await charactersModel.find({ _id: { $in: charIds } }, 'defaultForm forms').lean()
+    chars.forEach(c => {
+      // Use defaultForm first, then fall back to first entry in forms array
+      const fallbackId = c.defaultForm || (c.forms && c.forms[0]) || null
+      if (fallbackId) defaultFormMap[String(c._id)] = String(fallbackId)
+    })
+    const fallbackFormIds = Object.values(defaultFormMap)
     if (fallbackFormIds.length > 0) {
       const fallbackForms = await formsModel.find({ _id: { $in: fallbackFormIds } }).lean()
       fallbackForms.forEach(f => { formMap[String(f._id)] = f })
     }
-    chars.forEach(c => { if (c.defaultForm) defaultFormMap[String(c._id)] = String(c.defaultForm) })
   }
 
   const allPowerIds = new Set()
@@ -239,12 +241,10 @@ const getAbsorbTargets = async (userId, tableId) => {
   const results = []
   for (const target of targets) {
     const sheet = sheetMap[target.sheetId]
-    if (!sheet) { console.log('[absorb] SKIP — no sheet for', target.sheetId); continue }
+    if (!sheet) continue
 
     const formId = sheet.formId || defaultFormMap[String(sheet.characterId)]
     const form = formId ? formMap[String(formId)] : null
-    console.log('[absorb] sheet:', sheet.displayName, '| formId:', formId, '| form found:', !!form)
-
     const hpBonus = sheet.progressionHpBonus ?? 0
     const stats = form
       ? Object.entries(form.stats || {})
