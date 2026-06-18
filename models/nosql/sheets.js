@@ -54,6 +54,9 @@ const SheetScheme = new mongoose.Schema(
     // Always-present companions have 1 element; summoned companions grow 0→N
     companionInstances: { type: Object, default: {} },
 
+    // Pickable companions chosen via progression (e.g. Ant-Man's giant ants)
+    chosenCompIds: { type: Array, default: [] },
+
     // Angel / Archangel: Holy Points and transformation
     holyPoints:              { type: Number,  default: 0 },
     isArchangel:             { type: Boolean, default: false },

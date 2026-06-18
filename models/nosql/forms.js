@@ -84,6 +84,20 @@ const FormScheme = new Schema(
         maxInstancesByLevel: {
             type: Array,
             default: []
+        },
+        // Companions that must be chosen via progression picks before they can be summoned
+        pickablecomp: [{
+            type: String
+        }],
+        // When and how many pickable companions can be chosen; e.g. [{level:6,count:2},{level:12,count:2},{level:18,count:2}]
+        compPickGroups: {
+            type: Array,
+            default: []
+        },
+        // Set on companion forms to share a simultaneous-limit pool across multiple companion types
+        companionGroupId: {
+            type: String,
+            default: ''
         }
     },
     {
