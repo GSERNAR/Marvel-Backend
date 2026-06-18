@@ -288,8 +288,6 @@ const getAbsorbTargets = async (userId, tableId) => {
 
 // Find the right table for a given sheet and return absorb targets — no frontend guessing needed
 const getAbsorbTargetsForSheet = async (userId, sheetId) => {
-  console.log('[absorb] getAbsorbTargetsForSheet called — userId:', userId, 'sheetId:', sheetId)
-
   // Priority 1: table where this specific sheet is the active member sheet or an OAA NPC
   let table = await tablesModel.findOne({
     $or: [
@@ -297,21 +295,16 @@ const getAbsorbTargetsForSheet = async (userId, sheetId) => {
       { oaaSheetIds: String(sheetId) },
     ]
   })
-  console.log('[absorb] table by sheetId:', table ? table._id : 'NOT FOUND')
 
   // Priority 2: any table where this user is an accepted member (sheet not explicitly selected)
   if (!table) {
     table = await tablesModel.findOne({
       'members': { $elemMatch: { userId: String(userId), status: 'accepted' } }
     }).sort({ updatedAt: -1 })
-    console.log('[absorb] table by userId fallback:', table ? table._id : 'NOT FOUND')
   }
 
-  if (!table) { console.log('[absorb] no table found — returning []'); return [] }
-
-  const results = await getAbsorbTargets(userId, String(table._id))
-  console.log('[absorb] results count:', results.length, results.map(r => r.displayName))
-  return results
+  if (!table) return []
+  return getAbsorbTargets(userId, String(table._id))
 }
 
 module.exports = {
