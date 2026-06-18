@@ -209,84 +209,10 @@ const getAbsorbTargets = async (userId, tableId) => {
   const sheets = await sheetsModel.find({ _id: { $in: targets.map(t => t.sheetId) } }).lean()
   const sheetMap = Object.fromEntries(sheets.map(s => [String(s._id), s]))
 
-  const formIds = [...new Set(sheets.map(s => s.formId).filter(Boolean))]
-  // Fetch as full Mongoose docs (not lean) so toJSON() correctly serializes Map fields (stats, skills)
-  const formDocs = await formsModel.find({ _id: { $in: formIds } })
-  const formMap = {}
-  formDocs.forEach(f => {
-    formMap[String(f._id)] = {
-      stats: Object.fromEntries(f.stats || []),
-      skills: Object.fromEntries(f.skills || []),
-      specialSkills: Object.fromEntries(f.specialSkills || []),
-      abilities: f.abilities || [],
-      powers: f.powers || [],
-      image: f.image,
-    }
-  })
-
-  // Fall back to character's defaultForm (or first form) for sheets without formId
-  const noFormSheets = sheets.filter(s => !s.formId)
-  const defaultFormMap = {}
-  if (noFormSheets.length > 0) {
-    const charIds = [...new Set(noFormSheets.map(s => s.characterId).filter(Boolean))]
-    const chars = await charactersModel.find({ _id: { $in: charIds } }, 'defaultForm forms').lean()
-    chars.forEach(c => {
-      const fallbackId = c.defaultForm || (c.forms && c.forms[0]) || null
-      if (fallbackId) defaultFormMap[String(c._id)] = String(fallbackId)
-    })
-    const fallbackFormIds = Object.values(defaultFormMap)
-    if (fallbackFormIds.length > 0) {
-      const fallbackFormDocs = await formsModel.find({ _id: { $in: fallbackFormIds } })
-      fallbackFormDocs.forEach(f => {
-        formMap[String(f._id)] = {
-          stats: Object.fromEntries(f.stats || []),
-          skills: Object.fromEntries(f.skills || []),
-          specialSkills: Object.fromEntries(f.specialSkills || []),
-          abilities: f.abilities || [],
-          powers: f.powers || [],
-          image: f.image,
-        }
-      })
-    }
-  }
-
-  const allPowerIds = new Set()
-  Object.values(formMap).forEach(f => (f.powers ?? []).forEach(id => allPowerIds.add(String(id))))
-  const powerObjs = allPowerIds.size > 0
-    ? await powersModel.find({ _id: { $in: [...allPowerIds] } }).lean()
-    : []
-  const powerMap = Object.fromEntries(powerObjs.map(p => [String(p._id), p]))
-
   const results = []
   for (const target of targets) {
     const sheet = sheetMap[target.sheetId]
     if (!sheet) continue
-
-    const formId = sheet.formId || defaultFormMap[String(sheet.characterId)]
-    const form = formId ? formMap[String(formId)] : null
-    const hpBonus = sheet.progressionHpBonus ?? 0
-    const stats = form
-      ? Object.entries(form.stats || {})
-          .filter(([key]) => key !== 'combo')
-          .map(([key, val]) => ({ uniqueName: key, name: key, value: key === 'hp' ? (val ?? 0) + hpBonus : (val ?? 0) }))
-          .filter(s => s.value > 0)
-      : []
-
-    const skillRanks = sheet.skillRanks || {}
-    const rawSkills = form ? { ...(form.skills || {}), ...(form.specialSkills || {}) } : {}
-    const skills = Object.entries(rawSkills)
-      .map(([name, val]) => ({ name, value: (val ?? 0) + (skillRanks[name] ?? 0) }))
-      .filter(s => s.value > 0)
-
-    const unlockedSet = new Set((sheet.unlockedPowerIds ?? []).map(String))
-    const powers = form
-      ? (form.powers ?? [])
-          .filter(id => unlockedSet.has(String(id)))
-          .map(id => powerMap[String(id)])
-          .filter(Boolean)
-          .map(p => ({ _id: String(p._id), name: p.name, level: p.level ?? 0, description: p.description, type: p.type, skillCheck: p.skillCheck, chance: p.chance }))
-      : []
-
     results.push({
       memberId: target.memberId,
       memberUsername: target.memberUsername,
@@ -295,11 +221,11 @@ const getAbsorbTargets = async (userId, tableId) => {
       displayName: sheet.displayName,
       characterName: sheet.characterName,
       characterId: String(sheet.characterId),
+      formId: sheet.formId || null,
       level: sheet.level ?? 1,
-      image: form?.image ?? null,
-      stats, skills,
-      abilities: form?.abilities ?? [],
-      powers,
+      progressionHpBonus: sheet.progressionHpBonus ?? 0,
+      skillRanks: sheet.skillRanks || {},
+      unlockedPowerIds: (sheet.unlockedPowerIds ?? []).map(String),
     })
   }
   return results
