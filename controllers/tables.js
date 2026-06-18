@@ -19,13 +19,14 @@ const getTable = async (userId, tableId) => {
   const sheetIds = table.members.filter(m => m.status === 'accepted' && m.sheetId).map(m => m.sheetId)
   const portraits = await sheetsModel.find(
     { _id: { $in: sheetIds } },
-    'displayName characterName level characterId'
+    'displayName characterName level characterId formName'
   )
   const portraitMap = Object.fromEntries(portraits.map(s => [String(s._id), {
     displayName: s.displayName,
     characterName: s.characterName,
     level: s.level,
     characterId: String(s.characterId),
+    formName: s.formName || null,
   }]))
 
   const members = table.members.map(m => ({
