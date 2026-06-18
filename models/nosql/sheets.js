@@ -100,6 +100,7 @@ const SheetScheme = new mongoose.Schema(
       contactsAndFriendship: { type: String, default: '[]' },
       weaponSlots: { type: String, default: '' },
       consumableSlots: { type: String, default: '[]' },
+      equipmentSlots:  { type: String, default: '[]' },
       customImmunities: { type: String, default: '' }
     },
 
