@@ -62,8 +62,18 @@ const SheetScheme = new mongoose.Schema(
     rogueSkillSlots:   { type: Number, default: 0 },
     rogueAbilitySlots: { type: Number, default: 0 },
     roguePowerSlots:   { type: Array,  default: [0, 0] }, // each entry is max tier for that slot
-    rogueCurrentAbsorbed: { type: Object, default: null },
+    rogueCurrentAbsorbed: { type: Array,  default: [] },
     rogueAbsorbedHistory: { type: Array,  default: [] },
+
+    // Sentry: Void Points (0 → voidThreshold triggers Void transformation)
+    voidPoints: { type: Number, default: 0 },
+
+    // Captain Marvel: Binary system (charges to 20 → Binary form, drains to 0 → reverts)
+    binaryPoints: { type: Number, default: 0 },
+    isBinary:     { type: Boolean, default: false },
+
+    // Bishop: Energy Points (absorbed energy stored for later discharge, 0–10)
+    energyPoints: { type: Number, default: 0 },
 
     // Angel / Archangel: Holy Points and transformation
     holyPoints:              { type: Number,  default: 0 },
