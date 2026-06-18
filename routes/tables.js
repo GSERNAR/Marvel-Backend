@@ -7,12 +7,17 @@ const {
   inviteMember, respondToInvitation, selectSheet,
   addOaaSheet, removeOaaSheet,
   requestSheet, approveSheetRequest,
-  getTableSheet, getAbsorbTargets,
+  getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
 } = require('../controllers/tables')
 
 router.get('/', authMiddleware, handleError(req => getTables(req.tokenBody.id)))
 
 router.post('/', authMiddleware, handleError(req => createTable(req.tokenBody.id, req.body)))
+
+// Must be before /:id to avoid Express matching 'for-sheet' as a table ID
+router.get('/for-sheet/:sheetId/absorb-targets', authMiddleware, handleError(req =>
+  getAbsorbTargetsForSheet(req.tokenBody.id, req.params.sheetId)
+))
 
 router.get('/:id', authMiddleware, handleError(req => getTable(req.tokenBody.id, req.params.id)))
 

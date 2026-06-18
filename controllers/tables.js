@@ -219,12 +219,13 @@ const getAbsorbTargets = async (userId, tableId) => {
   if (noFormSheets.length > 0) {
     const charIds = [...new Set(noFormSheets.map(s => s.characterId).filter(Boolean))]
     const chars = await charactersModel.find({ _id: { $in: charIds } }, 'defaultForm').lean()
-    const fallbackFormIds = chars.map(c => String(c.defaultForm)).filter(Boolean)
+    // Only include characters that actually have a defaultForm (String(null) === 'null' is truthy — must check first)
+    const fallbackFormIds = chars.filter(c => c.defaultForm).map(c => String(c.defaultForm))
     if (fallbackFormIds.length > 0) {
       const fallbackForms = await formsModel.find({ _id: { $in: fallbackFormIds } }).lean()
       fallbackForms.forEach(f => { formMap[String(f._id)] = f })
     }
-    chars.forEach(c => { defaultFormMap[String(c._id)] = String(c.defaultForm) })
+    chars.forEach(c => { if (c.defaultForm) defaultFormMap[String(c._id)] = String(c.defaultForm) })
   }
 
   const allPowerIds = new Set()
@@ -286,10 +287,31 @@ const getAbsorbTargets = async (userId, tableId) => {
   return results
 }
 
+// Find the right table for a given sheet and return absorb targets — no frontend guessing needed
+const getAbsorbTargetsForSheet = async (userId, sheetId) => {
+  // Priority 1: table where this specific sheet is the active member sheet or an OAA NPC
+  let table = await tablesModel.findOne({
+    $or: [
+      { 'members': { $elemMatch: { sheetId: String(sheetId), status: 'accepted' } } },
+      { oaaSheetIds: String(sheetId) },
+    ]
+  })
+
+  // Priority 2: any table where this user is an accepted member (sheet not explicitly selected)
+  if (!table) {
+    table = await tablesModel.findOne({
+      'members': { $elemMatch: { userId: String(userId), status: 'accepted' } }
+    }).sort({ updatedAt: -1 })
+  }
+
+  if (!table) return []
+  return getAbsorbTargets(userId, String(table._id))
+}
+
 module.exports = {
   getTables, getTable, createTable, deleteTable,
   inviteMember, respondToInvitation, selectSheet,
   addOaaSheet, removeOaaSheet,
   requestSheet, approveSheetRequest,
-  getTableSheet, getAbsorbTargets,
+  getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
 }
