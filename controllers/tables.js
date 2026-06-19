@@ -169,6 +169,19 @@ const approveSheetRequest = async (oaaId, tableId, memberId, sheetId, approve) =
   return { ok: true }
 }
 
+const kickMember = async (oaaId, tableId, userId) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+
+  const before = table.members.length
+  table.members = table.members.filter(m => String(m.userId) !== String(userId))
+  if (table.members.length === before) throw new ApiError(ErrorCode.NOT_FOUND, 'Member not found')
+
+  await table.save()
+  return { ok: true }
+}
+
 const getTableSheet = async (oaaId, tableId, sheetId) => {
   const table = await tablesModel.findById(tableId)
   if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
@@ -258,5 +271,6 @@ module.exports = {
   inviteMember, respondToInvitation, selectSheet,
   addOaaSheet, removeOaaSheet,
   requestSheet, approveSheetRequest,
+  kickMember,
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
 }
