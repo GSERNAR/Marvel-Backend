@@ -79,6 +79,7 @@ const inviteMember = async (oaaId, tableId, targetUsername) => {
 
   table.members.push({ userId: String(target._id), username: target.username, status: 'pending', sheetId: null, pendingSheets: [] })
   await table.save()
+  if (global.io) global.io.emit('table:invitation', { userId: String(target._id), tableId: String(tableId) })
   return { ok: true }
 }
 
@@ -179,6 +180,7 @@ const kickMember = async (oaaId, tableId, userId) => {
   if (table.members.length === before) throw new ApiError(ErrorCode.NOT_FOUND, 'Member not found')
 
   await table.save()
+  if (global.io) global.io.emit('table:member-kicked', { tableId: String(tableId), userId: String(userId) })
   return { ok: true }
 }
 
