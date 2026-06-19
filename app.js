@@ -1,9 +1,17 @@
 require('dotenv').config()
 var fs = require('fs')
+const http = require('http')
 const express = require('express')
 const cors = require('cors')
 const path = require('path')
+const { Server } = require('socket.io')
 const app = express()
+const httpServer = http.createServer(app)
+
+const io = new Server(httpServer, {
+    cors: { origin: '*', methods: ['GET', 'POST'] }
+})
+global.io = io
 
 const dbConnect = require('./config/mongo')
 
@@ -17,7 +25,7 @@ const {
 
 const attributeController = require('./controllers/attributes')
 
-app.listen(PORT, async () => {
+httpServer.listen(PORT, async () => {
     console.log(fs.readFileSync('./assets/banner.txt').toString('utf-8'))
     console.log(`\nRunning app on: http://localhost:${PORT}`)
     try {
@@ -26,11 +34,11 @@ app.listen(PORT, async () => {
     } catch (error) {
         console.error('Database connection error', error)
     }
-    
+
     console.log('\nServer started!\n')
-    
+
     await attributeController.bootstrap()
-}) 
+})
 
 app.use('/api', require('./routes'))
 

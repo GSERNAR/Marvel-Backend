@@ -24,6 +24,7 @@ const updateSheet = async (userId, sheetId, body) => {
     { new: true, strict: false }
   )
   if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
+  if (global.io) global.io.emit('sheet:updated', { sheetId: String(sheetId), sheet })
   return sheet
 }
 
