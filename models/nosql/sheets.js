@@ -61,7 +61,7 @@ const SheetScheme = new mongoose.Schema(
     rogueStatSlots:    { type: Number, default: 0 },
     rogueSkillSlots:   { type: Number, default: 0 },
     rogueAbilitySlots: { type: Number, default: 0 },
-    roguePowerSlots:   { type: Array,  default: [0, 0] }, // each entry is max tier for that slot
+    roguePowerSlots:   { type: Array,  default: [0, 1] }, // each entry is max tier for that slot
     rogueCurrentAbsorbed: { type: Array,  default: [] },
     rogueAbsorbedHistory: { type: Array,  default: [] },
 
