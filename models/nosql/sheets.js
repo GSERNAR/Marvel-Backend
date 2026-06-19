@@ -110,6 +110,9 @@ const SheetScheme = new mongoose.Schema(
     statBuffs:  { type: Object, default: {} },
     skillBuffs: { type: Object, default: {} },
 
+    // Skills unlocked via SP outside of the character's base form skills (5 SP each)
+    unlockedSkills: { type: Array, default: [] },
+
     // Per-form unlocked power IDs for multi-form characters (Moon Knight, etc.)
     // Structure: { [formId]: [powerId, ...] }
     // Single-form characters continue to use unlockedPowerIds
