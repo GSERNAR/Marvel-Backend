@@ -106,6 +106,14 @@ const SheetScheme = new mongoose.Schema(
       customImmunities: { type: String, default: '' },
       spellScrolls:    { type: String, default: '[]' },
       scrollAbilityUsed: { type: String, default: 'false' },
+      // Nico Minoru / Sister Grimm — Spell tracking
+      nicoSpellList:       { type: String, default: '[]' },
+      nicoFavoriteSpells:  { type: String, default: '[]' },
+      nicoCastCounts:      { type: String, default: '{}' },
+      nicoStudyReductions: { type: String, default: '{}' },
+      nicoFreePicksUsed:   { type: String, default: '0' },
+      nicoLanguages:       { type: String, default: '["Japanese", "English"]' },
+      nicoShortRestUsed:   { type: String, default: 'false' },
     },
 
     // Stat/skill buff overlays (applied by player, visible to OAA in read-only view)
