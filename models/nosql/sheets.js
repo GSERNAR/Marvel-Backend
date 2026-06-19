@@ -103,7 +103,9 @@ const SheetScheme = new mongoose.Schema(
       equipmentSlots:  { type: String, default: '[]' },
       explosiveSlots:  { type: String, default: '[]' },
       knifeHarness:    { type: String, default: '0' },
-      customImmunities: { type: String, default: '' }
+      customImmunities: { type: String, default: '' },
+      spellScrolls:    { type: String, default: '[]' },
+      scrollAbilityUsed: { type: String, default: 'false' },
     },
 
     // Stat/skill buff overlays (applied by player, visible to OAA in read-only view)
