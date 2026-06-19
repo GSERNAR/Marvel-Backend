@@ -106,6 +106,10 @@ const SheetScheme = new mongoose.Schema(
       customImmunities: { type: String, default: '' }
     },
 
+    // Stat/skill buff overlays (applied by player, visible to OAA in read-only view)
+    statBuffs:  { type: Object, default: {} },
+    skillBuffs: { type: Object, default: {} },
+
     // Combat
     combatEffects: { type: Array, default: [] },
     specialResource: { type: Object, default: {} },
