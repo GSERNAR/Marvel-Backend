@@ -184,16 +184,23 @@ const kickMember = async (oaaId, tableId, userId) => {
   return { ok: true }
 }
 
-const getTableSheet = async (oaaId, tableId, sheetId) => {
+const getTableSheet = async (userId, tableId, sheetId) => {
   const table = await tablesModel.findById(tableId)
   if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
-  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
 
+  const isOaa = String(table.oaaId) === String(userId)
+  const isMember = table.members.some(m => String(m.userId) === String(userId) && m.status === 'accepted')
+  if (!isOaa && !isMember) throw new ApiError(ErrorCode.FORBIDDEN, 'Not a table participant')
+
+  // All participants can see accepted member sheets and OAA NPC sheets
   const validIds = new Set([
     ...table.members.filter(m => m.sheetId).map(m => String(m.sheetId)),
-    ...table.members.flatMap(m => (m.pendingSheets || []).map(ps => String(ps.sheetId))),
     ...table.oaaSheetIds.map(String),
   ])
+  // OAA can also access pending sheets under review
+  if (isOaa) {
+    table.members.flatMap(m => (m.pendingSheets || []).map(ps => String(ps.sheetId))).forEach(id => validIds.add(id))
+  }
   if (!validIds.has(String(sheetId))) throw new ApiError(ErrorCode.FORBIDDEN, 'Sheet not in table')
 
   const sheet = await sheetsModel.findById(sheetId)
