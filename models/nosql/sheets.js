@@ -114,6 +114,7 @@ const SheetScheme = new mongoose.Schema(
       nicoFreePicksUsed:   { type: String, default: '0' },
       nicoLanguages:       { type: String, default: '["Japanese", "English"]' },
       nicoShortRestUsed:   { type: String, default: 'false' },
+      nicoCastingWords:    { type: String, default: '{}' },
     },
 
     // Stat/skill buff overlays (applied by player, visible to OAA in read-only view)
