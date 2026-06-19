@@ -110,6 +110,11 @@ const SheetScheme = new mongoose.Schema(
     statBuffs:  { type: Object, default: {} },
     skillBuffs: { type: Object, default: {} },
 
+    // Per-form unlocked power IDs for multi-form characters (Moon Knight, etc.)
+    // Structure: { [formId]: [powerId, ...] }
+    // Single-form characters continue to use unlockedPowerIds
+    formUnlockedPowerIds: { type: Object, default: {} },
+
     // Combat
     combatEffects: { type: Array, default: [] },
     specialResource: { type: Object, default: {} },
