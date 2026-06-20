@@ -7,7 +7,7 @@ const {
   inviteMember, respondToInvitation, selectSheet,
   addOaaSheet, removeOaaSheet,
   requestSheet, approveSheetRequest,
-  kickMember,
+  kickMember, leaveTable,
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
 } = require('../controllers/tables')
 
@@ -50,6 +50,10 @@ router.post('/:id/request-sheet', authMiddleware, handleError(req =>
 
 router.post('/:id/approve-sheet', authMiddleware, handleError(req =>
   approveSheetRequest(req.tokenBody.id, req.params.id, req.body.memberId, req.body.sheetId, req.body.approve)
+))
+
+router.post('/:id/leave', authMiddleware, handleError(req =>
+  leaveTable(req.tokenBody.id, req.params.id)
 ))
 
 router.delete('/:id/members/:userId', authMiddleware, handleError(req =>
