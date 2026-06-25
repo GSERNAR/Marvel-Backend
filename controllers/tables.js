@@ -383,6 +383,35 @@ const advanceInitiativeTurn = async (oaaId, tableId) => {
   return { currentTurnIndex: next, turnEntry }
 }
 
+const setInitiativeRollOaa = async (oaaId, tableId, userId, total) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+  if (!table.initiative) throw new ApiError(ErrorCode.BAD_REQUEST, 'No initiative in progress')
+
+  const member = table.members.find(m => String(m.userId) === String(userId))
+  if (!member) throw new ApiError(ErrorCode.NOT_FOUND, 'Member not found')
+
+  if (!table.initiative.rolls) table.initiative.rolls = {}
+
+  const existing = table.initiative.rolls[String(userId)] ?? {}
+  let characterName = existing.characterName ?? null
+  if (!characterName && member.sheetId) {
+    const sheet = await sheetsModel.findById(member.sheetId, 'characterName').lean()
+    characterName = sheet?.characterName ?? null
+  }
+
+  table.initiative.rolls[String(userId)] = {
+    username: member.username,
+    characterName,
+    total: Number(total),
+    isSpeedster: existing.isSpeedster ?? false,
+  }
+  table.markModified('initiative')
+  await table.save()
+  return { ok: true }
+}
+
 const clearInitiative = async (oaaId, tableId) => {
   const table = await tablesModel.findById(tableId)
   if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
@@ -402,5 +431,5 @@ module.exports = {
   kickMember, leaveTable,
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
-  publishInitiativeOrder, advanceInitiativeTurn, clearInitiative,
+  publishInitiativeOrder, advanceInitiativeTurn, setInitiativeRollOaa, clearInitiative,
 }

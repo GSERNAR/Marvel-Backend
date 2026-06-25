@@ -10,7 +10,7 @@ const {
   kickMember, leaveTable,
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
-  publishInitiativeOrder, advanceInitiativeTurn, clearInitiative,
+  publishInitiativeOrder, advanceInitiativeTurn, setInitiativeRollOaa, clearInitiative,
 } = require('../controllers/tables')
 
 router.get('/', authMiddleware, handleError(req => getTables(req.tokenBody.id)))
@@ -90,6 +90,10 @@ router.post('/:id/initiative/order', authMiddleware, handleError(req =>
 
 router.post('/:id/initiative/next-turn', authMiddleware, handleError(req =>
   advanceInitiativeTurn(req.tokenBody.id, req.params.id)
+))
+
+router.post('/:id/initiative/set-roll', authMiddleware, handleError(req =>
+  setInitiativeRollOaa(req.tokenBody.id, req.params.id, req.body.userId, req.body.total)
 ))
 
 router.post('/:id/initiative/clear', authMiddleware, handleError(req =>
