@@ -10,7 +10,9 @@ const {
     generateUserToken,
     updateUser,
     updateFavourites,
-    deleteUser
+    deleteUser,
+    forgotPassword,
+    resetPassword,
 } = require('../controllers/users')
 
 const {
@@ -33,6 +35,14 @@ router.post('/', handleError(req =>
 
 router.post('/login', handleError(req =>
     generateUserToken(req.body)
+))
+
+router.post('/forgot-password', handleError(req =>
+    forgotPassword(req.body.email)
+))
+
+router.post('/reset-password/:token', handleError(req =>
+    resetPassword(req.params.token, req.body.password)
 ))
 
 router.put('/:id', handleUserAccess(req =>

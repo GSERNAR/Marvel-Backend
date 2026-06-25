@@ -1,8 +1,9 @@
-
+const crypto = require('crypto')
 const { usersModel } = require('../models')
 const { ErrorCode, ApiError } = require('../common/apiError')
 const { hashPassword, validatePassword } = require('../common/bcryptUtil')
 const { generateToken } = require('../common/jwtUtil')
+const { sendPasswordResetEmail } = require('../common/mailer')
 
 const getUsers = async () => {
   const users =  await usersModel.find({})
@@ -102,12 +103,49 @@ const userView = (user) => {
   return user
 }
 
+const forgotPassword = async (email) => {
+  if (!email) throw new ApiError(ErrorCode.BAD_REQUEST, 'Email is required')
+  const user = await usersModel.findOne({ email: email.toLowerCase().trim() })
+  if (!user) throw new ApiError(ErrorCode.NOT_FOUND, 'No account with that email address')
+
+  const rawToken = crypto.randomBytes(32).toString('hex')
+  user.passwordResetToken = crypto.createHash('sha256').update(rawToken).digest('hex')
+  user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000)
+  await user.save()
+
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+  await sendPasswordResetEmail(user.email, user.name || user.username, `${frontendUrl}/reset-password/${rawToken}`)
+
+  return { ok: true }
+}
+
+const resetPassword = async (rawToken, newPassword) => {
+  if (!rawToken || !newPassword) throw new ApiError(ErrorCode.BAD_REQUEST, 'Token and new password are required')
+
+  const hashed = crypto.createHash('sha256').update(rawToken).digest('hex')
+  const user = await usersModel.findOne({
+    passwordResetToken: hashed,
+    passwordResetExpires: { $gt: new Date() },
+  })
+
+  if (!user) throw new ApiError(ErrorCode.BAD_REQUEST, 'Reset link is invalid or has expired')
+
+  user.password = await hashPassword(newPassword)
+  user.passwordResetToken = undefined
+  user.passwordResetExpires = undefined
+  await user.save()
+
+  return { ok: true }
+}
+
 module.exports = {
   getUsers,
   getUser,
   registerUser,
   generateUserToken,
   updateUser,
-  updateFavourites,     
-  deleteUser
+  updateFavourites,
+  deleteUser,
+  forgotPassword,
+  resetPassword,
 }

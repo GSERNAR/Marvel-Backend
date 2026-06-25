@@ -45,7 +45,9 @@ const UserScheme = new mongoose.Schema(
         ,
         favourites: [{
             type: String,
-        }]
+        }],
+        passwordResetToken: { type: String },
+        passwordResetExpires: { type: Date },
     },
     {
         timestamps: true,
