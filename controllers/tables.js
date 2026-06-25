@@ -45,6 +45,7 @@ const getTable = async (userId, tableId) => {
     oaaUsername: table.oaaUsername,
     oaaSheetIds: table.oaaSheetIds || [],
     members,
+    initiative: table.initiative || null,
     isOaa,
     isMember: !!memberEntry && memberEntry.status === 'accepted',
     isPending: !!memberEntry && memberEntry.status === 'pending',
@@ -288,6 +289,91 @@ const getAbsorbTargetsForSheet = async (userId, sheetId) => {
   return getAbsorbTargets(userId, String(table._id))
 }
 
+// ── Initiative ────────────────────────────────────────────────────────────────
+
+const requestInitiative = async (oaaId, tableId) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+
+  table.initiative = { status: 'requesting', rolls: {}, tiebreakerUserIds: [], tiebreakerRolls: {}, order: null }
+  table.markModified('initiative')
+  await table.save()
+  return { ok: true }
+}
+
+const submitInitiativeRoll = async (userId, tableId, total, isSpeedster, isTiebreaker) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+
+  const isOaa = String(table.oaaId) === String(userId)
+  const member = table.members.find(m => String(m.userId) === String(userId) && m.status === 'accepted')
+  if (!isOaa && !member) throw new ApiError(ErrorCode.FORBIDDEN, 'Not a table participant')
+  if (!table.initiative) throw new ApiError(ErrorCode.BAD_REQUEST, 'No initiative in progress')
+
+  const username = member?.username ?? table.oaaUsername
+  let characterName = null
+  if (member?.sheetId) {
+    const sheet = await sheetsModel.findById(member.sheetId, 'characterName').lean()
+    characterName = sheet?.characterName ?? null
+  }
+
+  if (!table.initiative.rolls) table.initiative.rolls = {}
+  if (!table.initiative.tiebreakerRolls) table.initiative.tiebreakerRolls = {}
+
+  if (isTiebreaker) {
+    table.initiative.tiebreakerRolls[String(userId)] = Number(total)
+  } else {
+    table.initiative.rolls[String(userId)] = {
+      username,
+      characterName,
+      total: Number(total),
+      isSpeedster: !!isSpeedster,
+    }
+  }
+
+  table.markModified('initiative')
+  await table.save()
+  return { ok: true }
+}
+
+const startInitiativeTiebreaker = async (oaaId, tableId, userIds) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+  if (!table.initiative) throw new ApiError(ErrorCode.BAD_REQUEST, 'No initiative in progress')
+
+  table.initiative.status = 'tiebreaking'
+  table.initiative.tiebreakerUserIds = (userIds || []).map(String)
+  table.initiative.tiebreakerRolls = {}
+  table.markModified('initiative')
+  await table.save()
+  return { ok: true }
+}
+
+const publishInitiativeOrder = async (oaaId, tableId, order) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+  if (!table.initiative) throw new ApiError(ErrorCode.BAD_REQUEST, 'No initiative in progress')
+
+  table.initiative.order = order
+  table.markModified('initiative')
+  await table.save()
+  return { ok: true }
+}
+
+const clearInitiative = async (oaaId, tableId) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+
+  table.initiative = null
+  table.markModified('initiative')
+  await table.save()
+  return { ok: true }
+}
+
 module.exports = {
   getTables, getTable, createTable, deleteTable,
   inviteMember, respondToInvitation, selectSheet,
@@ -295,4 +381,5 @@ module.exports = {
   requestSheet, approveSheetRequest,
   kickMember, leaveTable,
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
+  requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker, publishInitiativeOrder, clearInitiative,
 }

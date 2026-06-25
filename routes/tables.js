@@ -9,6 +9,7 @@ const {
   requestSheet, approveSheetRequest,
   kickMember, leaveTable,
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
+  requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker, publishInitiativeOrder, clearInitiative,
 } = require('../controllers/tables')
 
 router.get('/', authMiddleware, handleError(req => getTables(req.tokenBody.id)))
@@ -66,6 +67,28 @@ router.get('/:id/sheets/:sheetId', authMiddleware, handleError(req =>
 
 router.get('/:id/absorb-targets', authMiddleware, handleError(req =>
   getAbsorbTargets(req.tokenBody.id, req.params.id)
+))
+
+// ── Initiative ────────────────────────────────────────────────────────────────
+
+router.post('/:id/initiative/request', authMiddleware, handleError(req =>
+  requestInitiative(req.tokenBody.id, req.params.id)
+))
+
+router.post('/:id/initiative/roll', authMiddleware, handleError(req =>
+  submitInitiativeRoll(req.tokenBody.id, req.params.id, req.body.total, req.body.isSpeedster, req.body.isTiebreaker)
+))
+
+router.post('/:id/initiative/tiebreaker', authMiddleware, handleError(req =>
+  startInitiativeTiebreaker(req.tokenBody.id, req.params.id, req.body.userIds)
+))
+
+router.post('/:id/initiative/order', authMiddleware, handleError(req =>
+  publishInitiativeOrder(req.tokenBody.id, req.params.id, req.body.order)
+))
+
+router.post('/:id/initiative/clear', authMiddleware, handleError(req =>
+  clearInitiative(req.tokenBody.id, req.params.id)
 ))
 
 module.exports = router

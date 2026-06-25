@@ -17,6 +17,9 @@ const TableSchema = new mongoose.Schema(
         pendingSheets: [{ sheetId: String, sheetName: String }],
       },
     ],
+    // initiative: { status, rolls: { [userId]: { username, characterName, total, isSpeedster } },
+    //               tiebreakerUserIds, tiebreakerRolls: { [userId]: number }, order }
+    initiative: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { timestamps: true, versionKey: false }
 )
