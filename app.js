@@ -15,7 +15,14 @@ global.io = io
 
 const dbConnect = require('./config/mongo')
 
-app.use(cors())
+const corsOptions = {
+    origin: true,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+}
+app.options('*', cors(corsOptions))
+app.use(cors(corsOptions))
 app.use(express.json())
 
 const {
