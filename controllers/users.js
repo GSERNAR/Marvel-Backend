@@ -3,7 +3,7 @@ const { usersModel } = require('../models')
 const { ErrorCode, ApiError } = require('../common/apiError')
 const { hashPassword, validatePassword } = require('../common/bcryptUtil')
 const { generateToken } = require('../common/jwtUtil')
-const { sendPasswordResetEmail } = require('../common/mailer')
+const { sendPasswordResetEmail, sendVerificationEmail } = require('../common/mailer')
 
 const getUsers = async () => {
   const users =  await usersModel.find({})
@@ -15,11 +15,21 @@ const getUser = async (id) =>
 
 const registerUser = async (user) => {
   const hashedPassword = await hashPassword(user.password)
-  user = {
+
+  const rawToken = crypto.randomBytes(32).toString('hex')
+  const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex')
+
+  const created = await usersModel.create({
     ...user,
-    password: hashedPassword
-  }
-  return userView(await usersModel.create(user))
+    password: hashedPassword,
+    emailVerified: false,
+    emailVerificationToken: hashedToken,
+  })
+
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+  await sendVerificationEmail(created.email, created.name || created.username, `${frontendUrl}/verify-email/${rawToken}`)
+
+  return userView(created)
 }
 
 const generateUserToken = async (userDetails) => {
@@ -38,6 +48,11 @@ const generateUserToken = async (userDetails) => {
   const validPassword = await validatePassword(password, user.password)
   if (!validPassword) {
     throw new ApiError(ErrorCode.FORBIDDEN, 'Invalid username or password')
+  }
+
+  // Block unverified accounts (existing accounts without a token are grandfathered in)
+  if (!user.emailVerified && user.emailVerificationToken) {
+    throw new ApiError(ErrorCode.FORBIDDEN, 'Please verify your email address before logging in. Check your inbox.')
   }
   
   // Generate JWT
@@ -103,6 +118,21 @@ const userView = (user) => {
   return user
 }
 
+const verifyEmail = async (rawToken) => {
+  if (!rawToken) throw new ApiError(ErrorCode.BAD_REQUEST, 'Token is required')
+
+  const hashed = crypto.createHash('sha256').update(rawToken).digest('hex')
+  const user = await usersModel.findOne({ emailVerificationToken: hashed })
+
+  if (!user) throw new ApiError(ErrorCode.BAD_REQUEST, 'Verification link is invalid or has already been used')
+
+  user.emailVerified = true
+  user.emailVerificationToken = undefined
+  await user.save()
+
+  return { ok: true }
+}
+
 const forgotPassword = async (email) => {
   if (!email) throw new ApiError(ErrorCode.BAD_REQUEST, 'Email is required')
   const user = await usersModel.findOne({ email: email.toLowerCase().trim() })
@@ -146,6 +176,7 @@ module.exports = {
   updateUser,
   updateFavourites,
   deleteUser,
+  verifyEmail,
   forgotPassword,
   resetPassword,
 }
