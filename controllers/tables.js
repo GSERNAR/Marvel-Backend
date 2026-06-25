@@ -358,9 +358,29 @@ const publishInitiativeOrder = async (oaaId, tableId, order) => {
   if (!table.initiative) throw new ApiError(ErrorCode.BAD_REQUEST, 'No initiative in progress')
 
   table.initiative.order = order
+  table.initiative.currentTurnIndex = -1
   table.markModified('initiative')
   await table.save()
   return { ok: true }
+}
+
+const advanceInitiativeTurn = async (oaaId, tableId) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+  if (!table.initiative?.order?.length) throw new ApiError(ErrorCode.BAD_REQUEST, 'No published order')
+
+  const order = table.initiative.order
+  const current = table.initiative.currentTurnIndex ?? -1
+  const next = (current + 1) % order.length
+  table.initiative.currentTurnIndex = next
+  table.markModified('initiative')
+  await table.save()
+
+  const turnEntry = order[next]
+  if (global.io) global.io.emit('initiative:turn', { tableId: String(tableId), currentTurnIndex: next, turnEntry })
+
+  return { currentTurnIndex: next, turnEntry }
 }
 
 const clearInitiative = async (oaaId, tableId) => {
@@ -381,5 +401,6 @@ module.exports = {
   requestSheet, approveSheetRequest,
   kickMember, leaveTable,
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
-  requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker, publishInitiativeOrder, clearInitiative,
+  requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
+  publishInitiativeOrder, advanceInitiativeTurn, clearInitiative,
 }
