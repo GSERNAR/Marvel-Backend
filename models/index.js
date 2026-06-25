@@ -7,7 +7,6 @@ const { attributeValuesModel, attributeStacksModel } = require('./nosql/attribut
 const { ModulesModel } = require('./nosql/modules')
 const { sheetsModel } = require('./nosql/sheets')
 const { tablesModel } = require('./nosql/tables')
-const { pushSubscriptionsModel } = require('./nosql/pushSubscriptions')
 
 module.exports = {
     usersModel,
@@ -19,6 +18,5 @@ module.exports = {
     attributeValuesModel,
     attributeStacksModel,
     sheetsModel,
-    tablesModel,
-    pushSubscriptionsModel
+    tablesModel
 }

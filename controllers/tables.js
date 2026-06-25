@@ -1,6 +1,5 @@
 const { tablesModel, sheetsModel, usersModel, formsModel, powersModel, charactersModel } = require('../models')
 const { ApiError, ErrorCode } = require('../common/apiError')
-const { sendPushToUser } = require('./push')
 
 const getTables = async (userId) => {
   return tablesModel.find({
@@ -380,14 +379,6 @@ const advanceInitiativeTurn = async (oaaId, tableId) => {
 
   const turnEntry = order[next]
   if (global.io) global.io.emit('initiative:turn', { tableId: String(tableId), currentTurnIndex: next, turnEntry })
-
-  if (turnEntry?.userId) {
-    sendPushToUser(turnEntry.userId, {
-      title: "Your turn!",
-      body: `It's your turn in combat! (${turnEntry.name || turnEntry.label})`,
-      url: '/my-tables',
-    }).catch(() => {})
-  }
 
   return { currentTurnIndex: next, turnEntry }
 }
