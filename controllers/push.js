@@ -1,11 +1,13 @@
 const webpush = require('web-push')
 const { pushSubscriptionsModel } = require('../models/nosql/pushSubscriptions')
 
-webpush.setVapidDetails(
-  'mailto:santisernaramirez@gmail.com',
-  process.env.VAPID_PUBLIC_KEY,
-  process.env.VAPID_PRIVATE_KEY
-)
+if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(
+    'mailto:santisernaramirez@gmail.com',
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+  )
+}
 
 const getVapidPublicKey = async () => {
   return { publicKey: process.env.VAPID_PUBLIC_KEY }
@@ -21,7 +23,7 @@ const savePushSubscription = async (userId, subscription) => {
 }
 
 const sendPushToUser = async (userId, payload) => {
-  if (!userId) return
+  if (!userId || !process.env.VAPID_PUBLIC_KEY) return
   const record = await pushSubscriptionsModel.findOne({ userId: String(userId) })
   if (!record) return
   try {
