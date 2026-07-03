@@ -441,6 +441,10 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
     sheet.currentHp = Math.max(0, (sheet.currentHp ?? 0) - Number(body.damage))
   }
 
+  if (body.heal != null) {
+    sheet.currentHp = (sheet.currentHp ?? 0) + Number(body.heal)
+  }
+
   if (body.statusId != null) {
     if (!sheet.specialResource) sheet.specialResource = {}
     if (!sheet.specialResource.statusEffects) sheet.specialResource.statusEffects = {}
