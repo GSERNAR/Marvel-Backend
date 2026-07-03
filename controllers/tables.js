@@ -423,6 +423,36 @@ const clearInitiative = async (oaaId, tableId) => {
   return { ok: true }
 }
 
+const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+
+  const validIds = new Set([
+    ...table.members.filter(m => m.sheetId).map(m => String(m.sheetId)),
+    ...table.oaaSheetIds.map(String),
+  ])
+  if (!validIds.has(String(sheetId))) throw new ApiError(ErrorCode.FORBIDDEN, 'Sheet not in table')
+
+  const sheet = await sheetsModel.findById(sheetId)
+  if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
+
+  if (body.damage != null) {
+    sheet.currentHp = Math.max(0, (sheet.currentHp ?? 0) - Number(body.damage))
+  }
+
+  if (body.statusId != null) {
+    if (!sheet.specialResource) sheet.specialResource = {}
+    if (!sheet.specialResource.statusEffects) sheet.specialResource.statusEffects = {}
+    sheet.specialResource.statusEffects[body.statusId] = { active: !!body.statusActive }
+    sheet.markModified('specialResource')
+  }
+
+  await sheet.save()
+  if (global.io) global.io.emit('sheet:updated', { sheetId: String(sheetId), sheet })
+  return { currentHp: sheet.currentHp }
+}
+
 module.exports = {
   getTables, getTable, createTable, deleteTable,
   inviteMember, respondToInvitation, selectSheet,
@@ -432,4 +462,5 @@ module.exports = {
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
   publishInitiativeOrder, advanceInitiativeTurn, setInitiativeRollOaa, clearInitiative,
+  oaaSheetCombatUpdate,
 }
