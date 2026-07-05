@@ -454,6 +454,7 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
 
   await sheet.save()
   if (global.io) global.io.emit('sheet:updated', { sheetId: String(sheetId), sheet })
+  if (body.damage != null && global.io) global.io.emit('combat:damage', { sheetId: String(sheetId) })
   return { currentHp: sheet.currentHp }
 }
 
