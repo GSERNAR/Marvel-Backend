@@ -21,6 +21,7 @@ const SheetScheme = new mongoose.Schema(
 
     // HP / PP
     currentHp:      { type: Number, default: null },
+    shieldHp:       { type: Number, default: 0 },
     currentPp:      { type: Number, default: null },
     webCharges:     { type: Number, default: 20 },
     webCartridges:  { type: Number, default: 10 },

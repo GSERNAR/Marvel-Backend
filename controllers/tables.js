@@ -438,7 +438,10 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
   if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
 
   if (body.damage != null) {
-    sheet.currentHp = Math.max(0, (sheet.currentHp ?? 0) - Number(body.damage))
+    const dmg = Number(body.damage)
+    const shieldAbsorb = Math.min(sheet.shieldHp ?? 0, dmg)
+    sheet.shieldHp = (sheet.shieldHp ?? 0) - shieldAbsorb
+    sheet.currentHp = Math.max(0, (sheet.currentHp ?? 0) - (dmg - shieldAbsorb))
   }
 
   if (body.heal != null) {
@@ -455,7 +458,7 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
   await sheet.save()
   if (global.io) global.io.emit('sheet:updated', { sheetId: String(sheetId), sheet })
   if (body.damage != null && global.io) global.io.emit('combat:damage', { sheetId: String(sheetId) })
-  return { currentHp: sheet.currentHp }
+  return { currentHp: sheet.currentHp, shieldHp: sheet.shieldHp ?? 0 }
 }
 
 module.exports = {
