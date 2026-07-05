@@ -441,11 +441,17 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
     const dmg = Number(body.damage)
     const shieldAbsorb = Math.min(sheet.shieldHp ?? 0, dmg)
     sheet.shieldHp = (sheet.shieldHp ?? 0) - shieldAbsorb
-    sheet.currentHp = Math.max(0, (sheet.currentHp ?? 0) - (dmg - shieldAbsorb))
+    const hpBefore = sheet.currentHp ?? 0
+    const remainingDmg = dmg - shieldAbsorb
+    sheet.currentHp = Math.max(0, hpBefore - remainingDmg)
+    sheet.deathHp = sheet.currentHp === 0 && remainingDmg > hpBefore
+      ? remainingDmg - hpBefore
+      : 0
   }
 
   if (body.heal != null) {
     sheet.currentHp = (sheet.currentHp ?? 0) + Number(body.heal)
+    if (sheet.currentHp > 0) sheet.deathHp = 0
   }
 
   if (body.statusId != null) {
@@ -458,7 +464,7 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
   await sheet.save()
   if (global.io) global.io.emit('sheet:updated', { sheetId: String(sheetId), sheet })
   if (body.damage != null && global.io) global.io.emit('combat:damage', { sheetId: String(sheetId) })
-  return { currentHp: sheet.currentHp, shieldHp: sheet.shieldHp ?? 0 }
+  return { currentHp: sheet.currentHp, shieldHp: sheet.shieldHp ?? 0, deathHp: sheet.deathHp ?? 0 }
 }
 
 module.exports = {
