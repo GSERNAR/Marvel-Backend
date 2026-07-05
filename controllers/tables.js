@@ -450,8 +450,16 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
   }
 
   if (body.heal != null) {
-    sheet.currentHp = (sheet.currentHp ?? 0) + Number(body.heal)
-    if (sheet.currentHp > 0) sheet.deathHp = 0
+    const healAmt = Number(body.heal)
+    const currentDeathHp = sheet.deathHp ?? 0
+    if (currentDeathHp > 0) {
+      const deathReduction = Math.min(currentDeathHp, healAmt)
+      sheet.deathHp = currentDeathHp - deathReduction
+      const remaining = healAmt - deathReduction
+      if (remaining > 0) sheet.currentHp = (sheet.currentHp ?? 0) + remaining
+    } else {
+      sheet.currentHp = (sheet.currentHp ?? 0) + healAmt
+    }
   }
 
   if (body.statusId != null) {
