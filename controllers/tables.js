@@ -444,9 +444,11 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
     const hpBefore = sheet.currentHp ?? 0
     const remainingDmg = dmg - shieldAbsorb
     sheet.currentHp = Math.max(0, hpBefore - remainingDmg)
-    sheet.deathHp = sheet.currentHp === 0 && remainingDmg > hpBefore
-      ? remainingDmg - hpBefore
-      : 0
+    if (sheet.currentHp === 0 && remainingDmg > hpBefore) {
+      sheet.deathHp = (sheet.deathHp ?? 0) + (remainingDmg - hpBefore)
+    } else if (sheet.currentHp > 0) {
+      sheet.deathHp = 0
+    }
   }
 
   if (body.heal != null) {
