@@ -24,6 +24,7 @@ const SheetScheme = new mongoose.Schema(
     shieldHp:       { type: Number, default: 0 },
     deathHp:        { type: Number, default: 0 },
     currentPp:      { type: Number, default: null },
+    bonusPp:        { type: Number, default: 0 },
     webCharges:     { type: Number, default: 20 },
     webCartridges:  { type: Number, default: 10 },
     progressionHpBonus: { type: Number, default: 0 },
