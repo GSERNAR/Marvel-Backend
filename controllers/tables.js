@@ -414,7 +414,7 @@ const advanceInitiativeTurn = async (oaaId, tableId) => {
   if (global.io) global.io.emit('initiative:turn', { tableId: String(tableId), currentTurnIndex: next, turnEntry })
 
   // Notify long-poll watchers for OAA + all accepted members (all open tabs per user)
-  const notifyPayload = { tableId: String(tableId), turnEntry }
+  const notifyPayload = { tableId: String(tableId), currentTurnIndex: next, turnEntry }
   const notifyIds = new Set([String(table.oaaId)])
   for (const m of (table.members ?? [])) {
     if (m.status === 'accepted' && m.userId) notifyIds.add(String(m.userId))
