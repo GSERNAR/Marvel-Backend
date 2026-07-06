@@ -1,6 +1,39 @@
 const { tablesModel, sheetsModel, usersModel, formsModel, powersModel, charactersModel } = require('../models')
 const { ApiError, ErrorCode } = require('../common/apiError')
 
+// Long-poll watchers: userId (string) → { finish, timer, done }
+const pendingWatchers = new Map()
+
+const watchAnyInitiativeTurn = (userId, res) => {
+  const key = String(userId)
+
+  // Replace any stale watcher from a previous connection
+  const old = pendingWatchers.get(key)
+  if (old && !old.done) { old.done = true; clearTimeout(old.timer) }
+
+  const entry = { done: false }
+
+  const finish = (data) => {
+    if (entry.done) return
+    entry.done = true
+    clearTimeout(entry.timer)
+    if (pendingWatchers.get(key) === entry) pendingWatchers.delete(key)
+    try { if (!res.headersSent) res.json(data) } catch {}
+  }
+
+  entry.finish = finish
+  entry.timer = setTimeout(() => finish({ timeout: true }), 28000)
+  pendingWatchers.set(key, entry)
+
+  // Clean up if the client disconnects before we respond
+  res.on('close', () => {
+    if (entry.done) return
+    entry.done = true
+    clearTimeout(entry.timer)
+    if (pendingWatchers.get(key) === entry) pendingWatchers.delete(key)
+  })
+}
+
 const getTables = async (userId) => {
   return tablesModel.find({
     $or: [{ oaaId: userId }, { 'members.userId': userId }]
@@ -380,6 +413,17 @@ const advanceInitiativeTurn = async (oaaId, tableId) => {
   const turnEntry = order[next]
   if (global.io) global.io.emit('initiative:turn', { tableId: String(tableId), currentTurnIndex: next, turnEntry })
 
+  // Notify long-poll watchers for OAA + all accepted members
+  const notifyPayload = { tableId: String(tableId), turnEntry }
+  const notifyIds = new Set([String(table.oaaId)])
+  for (const m of (table.members ?? [])) {
+    if (m.status === 'accepted' && m.userId) notifyIds.add(String(m.userId))
+  }
+  for (const uid of notifyIds) {
+    const w = pendingWatchers.get(uid)
+    if (w) w.finish(notifyPayload)
+  }
+
   return { currentTurnIndex: next, turnEntry }
 }
 
@@ -488,4 +532,5 @@ module.exports = {
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
   publishInitiativeOrder, advanceInitiativeTurn, setInitiativeRollOaa, clearInitiative,
   oaaSheetCombatUpdate,
+  watchAnyInitiativeTurn,
 }

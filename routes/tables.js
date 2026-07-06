@@ -12,16 +12,23 @@ const {
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
   publishInitiativeOrder, advanceInitiativeTurn, setInitiativeRollOaa, clearInitiative,
   oaaSheetCombatUpdate,
+  watchAnyInitiativeTurn,
 } = require('../controllers/tables')
 
 router.get('/', authMiddleware, handleError(req => getTables(req.tokenBody.id)))
 
 router.post('/', authMiddleware, handleError(req => createTable(req.tokenBody.id, req.body)))
 
-// Must be before /:id to avoid Express matching 'for-sheet' as a table ID
+// Must be before /:id to avoid Express matching literal paths as table IDs
 router.get('/for-sheet/:sheetId/absorb-targets', authMiddleware, handleError(req =>
   getAbsorbTargetsForSheet(req.tokenBody.id, req.params.sheetId)
 ))
+
+// Long-poll: holds the response open until a turn advances or 28 s timeout
+router.get('/initiative/watch', authMiddleware, (req, res) => {
+  try { watchAnyInitiativeTurn(req.tokenBody.id, res) }
+  catch (err) { if (!res.headersSent) res.status(500).json({ error: 'Watch failed' }) }
+})
 
 router.get('/:id', authMiddleware, handleError(req => getTable(req.tokenBody.id, req.params.id)))
 
