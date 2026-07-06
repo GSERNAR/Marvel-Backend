@@ -1,15 +1,14 @@
 const { tablesModel, sheetsModel, usersModel, formsModel, powersModel, charactersModel } = require('../models')
 const { ApiError, ErrorCode } = require('../common/apiError')
 
-// Long-poll watchers: userId (string) → { finish, timer, done }
+// Long-poll watchers: userId (string) → [{ finish, timer, done }, ...]
+// Array so multiple open tabs/windows for the same user all get notified.
 const pendingWatchers = new Map()
 
 const watchAnyInitiativeTurn = (userId, res) => {
   const key = String(userId)
-
-  // Replace any stale watcher from a previous connection
-  const old = pendingWatchers.get(key)
-  if (old && !old.done) { old.done = true; clearTimeout(old.timer) }
+  if (!pendingWatchers.has(key)) pendingWatchers.set(key, [])
+  const list = pendingWatchers.get(key)
 
   const entry = { done: false }
 
@@ -17,20 +16,21 @@ const watchAnyInitiativeTurn = (userId, res) => {
     if (entry.done) return
     entry.done = true
     clearTimeout(entry.timer)
-    if (pendingWatchers.get(key) === entry) pendingWatchers.delete(key)
+    const idx = list.indexOf(entry)
+    if (idx >= 0) list.splice(idx, 1)
     try { if (!res.headersSent) res.json(data) } catch {}
   }
 
   entry.finish = finish
   entry.timer = setTimeout(() => finish({ timeout: true }), 28000)
-  pendingWatchers.set(key, entry)
+  list.push(entry)
 
-  // Clean up if the client disconnects before we respond
   res.on('close', () => {
     if (entry.done) return
     entry.done = true
     clearTimeout(entry.timer)
-    if (pendingWatchers.get(key) === entry) pendingWatchers.delete(key)
+    const idx = list.indexOf(entry)
+    if (idx >= 0) list.splice(idx, 1)
   })
 }
 
@@ -413,15 +413,16 @@ const advanceInitiativeTurn = async (oaaId, tableId) => {
   const turnEntry = order[next]
   if (global.io) global.io.emit('initiative:turn', { tableId: String(tableId), currentTurnIndex: next, turnEntry })
 
-  // Notify long-poll watchers for OAA + all accepted members
+  // Notify long-poll watchers for OAA + all accepted members (all open tabs per user)
   const notifyPayload = { tableId: String(tableId), turnEntry }
   const notifyIds = new Set([String(table.oaaId)])
   for (const m of (table.members ?? [])) {
     if (m.status === 'accepted' && m.userId) notifyIds.add(String(m.userId))
   }
   for (const uid of notifyIds) {
-    const w = pendingWatchers.get(uid)
-    if (w) w.finish(notifyPayload)
+    const list = pendingWatchers.get(uid) ?? []
+    pendingWatchers.set(uid, [])
+    list.forEach(w => w.finish(notifyPayload))
   }
 
   return { currentTurnIndex: next, turnEntry }
