@@ -490,6 +490,7 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
 
   let armorDestroyed = false
   let statusJustApplied = null
+  let ironManDebug = null // TEMP diagnostic — remove once the armor-destroy trigger is confirmed working
 
   if (body.damage != null) {
     const dmg = Number(body.damage)
@@ -503,6 +504,18 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
     // it (Hulkbuster's sub-armor), or his base form otherwise. Armor locked until repaired.
     // Mirrors the frontend's ResourcesPanel.jsx handleDealDamage so OAA-dealt damage behaves
     // the same as damage dealt from the sheet's own Combat tab.
+    if (sheet.characterName === 'Iron Man') {
+      const currentForm = sheet.formId ? await formsModel.findById(sheet.formId) : null
+      ironManDebug = {
+        formId: sheet.formId ?? null,
+        formFound: !!currentForm,
+        formTypes: currentForm?.types ?? null,
+        hpBefore,
+        remainingDmg,
+        wouldTriggerDestroy: !!currentForm?.types?.includes('armor') && sheet.formId && remainingDmg > 0 && remainingDmg >= hpBefore,
+      }
+    }
+
     if (sheet.characterName === 'Iron Man' && sheet.formId && remainingDmg > 0 && remainingDmg >= hpBefore) {
       const currentForm = await formsModel.findById(sheet.formId)
       if (currentForm?.types?.includes('armor')) {
@@ -593,7 +606,7 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
     else global.io.emit('combat:damage', { sheetId: String(sheetId) })
   }
   if (statusJustApplied && global.io) global.io.emit('status:applied', { sheetId: String(sheetId), statusId: statusJustApplied })
-  return { currentHp: sheet.currentHp, shieldHp: sheet.shieldHp ?? 0, deathHp: sheet.deathHp ?? 0 }
+  return { currentHp: sheet.currentHp, shieldHp: sheet.shieldHp ?? 0, deathHp: sheet.deathHp ?? 0, ironManDebug }
 }
 
 module.exports = {
