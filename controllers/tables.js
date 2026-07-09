@@ -628,8 +628,11 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
   if (global.io) global.io.emit('sheet:updated', { sheetId: String(sheetId), sheet })
   if (body.damage != null && global.io) {
     if (armorDestroyed) global.io.emit('armor:destroyed', { sheetId: String(sheetId) })
-    else global.io.emit('combat:damage', { sheetId: String(sheetId) })
+    // Iron Man's armorDestroyed branch never sets currentHp to 0 here — it swaps into the
+    // sub-armor/base form's HP instead — so this naturally never fires for him at 0 HP.
+    else global.io.emit('combat:damage', { sheetId: String(sheetId), defeated: sheet.currentHp === 0 })
   }
+  if (body.heal != null && global.io) global.io.emit('combat:heal', { sheetId: String(sheetId) })
   if (statusJustApplied && global.io) global.io.emit('status:applied', { sheetId: String(sheetId), statusId: statusJustApplied })
   return { currentHp: sheet.currentHp, shieldHp: sheet.shieldHp ?? 0, deathHp: sheet.deathHp ?? 0, ironManDebug }
 }
