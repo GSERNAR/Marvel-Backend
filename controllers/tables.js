@@ -7,6 +7,20 @@ const computeMaxPP = (powerStat, level) => {
   return p * 2 + Math.floor((level ?? 1) / 5) * 2
 }
 
+// forms/characters can have _id stored as plain strings (not real ObjectIds) from older
+// bulk imports, which breaks Mongoose's auto-casting findById(). Fetch-all + string compare
+// instead, matching how the working GET /forms and GET /characters list routes already do it.
+const findFormById = async (id) => {
+  if (!id) return null
+  const forms = await formsModel.find({})
+  return forms.find(f => String(f._id) === String(id)) ?? null
+}
+const findCharacterById = async (id) => {
+  if (!id) return null
+  const characters = await charactersModel.find({})
+  return characters.find(c => String(c._id) === String(id)) ?? null
+}
+
 // Long-poll watchers: userId (string) → [{ finish, timer, done }, ...]
 // Array so multiple open tabs/windows for the same user all get notified.
 const pendingWatchers = new Map()
@@ -504,20 +518,16 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
     // it (Hulkbuster's sub-armor), or his base form otherwise. Armor locked until repaired.
     // Mirrors the frontend's ResourcesPanel.jsx handleDealDamage so OAA-dealt damage behaves
     // the same as damage dealt from the sheet's own Combat tab.
-    if (sheet.characterName === 'Iron Man') {
-      const currentForm = sheet.formId ? await formsModel.findById(sheet.formId) : null
+    if (sheet.characterName === 'Iron Man' && sheet.formId && remainingDmg > 0 && remainingDmg >= hpBefore) {
+      const currentForm = await findFormById(sheet.formId)
       ironManDebug = {
         formId: sheet.formId ?? null,
         formFound: !!currentForm,
         formTypes: currentForm?.types ?? null,
         hpBefore,
         remainingDmg,
-        wouldTriggerDestroy: !!currentForm?.types?.includes('armor') && sheet.formId && remainingDmg > 0 && remainingDmg >= hpBefore,
+        wouldTriggerDestroy: !!currentForm?.types?.includes('armor'),
       }
-    }
-
-    if (sheet.characterName === 'Iron Man' && sheet.formId && remainingDmg > 0 && remainingDmg >= hpBefore) {
-      const currentForm = await formsModel.findById(sheet.formId)
       if (currentForm?.types?.includes('armor')) {
         armorDestroyed = true
         const destroyedFormId = sheet.formId
@@ -528,9 +538,9 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
         const equippedArmorSlot = isHulkbuster ? equipmentSlots.find(s => s?.formId && s?.isActive) : null
         const subArmorFormId = equippedArmorSlot?.formId ?? null
 
-        const character = await charactersModel.findById(sheet.characterId)
+        const character = await findCharacterById(sheet.characterId)
         const targetFormId = subArmorFormId ?? character?.defaultForm ?? null
-        const targetForm = targetFormId ? await formsModel.findById(targetFormId) : null
+        const targetForm = targetFormId ? await findFormById(targetFormId) : null
 
         const armorCurrentHp = { ...(sheet.armorCurrentHp ?? {}) }
         const armorCurrentPp = sheet.armorCurrentPp ?? {}
