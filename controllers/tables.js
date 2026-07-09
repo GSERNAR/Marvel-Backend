@@ -25,8 +25,21 @@ const findCharacterById = async (id) => {
 // Array so multiple open tabs/windows for the same user all get notified.
 const pendingWatchers = new Map()
 
-const watchAnyInitiativeTurn = (userId, res) => {
+// Last turn-advance event seen per user, keyed by monotonic seq. Lets a /watch request
+// that connects *after* a notify already fired (e.g. GM rapid-firing Next Turn through several
+// NPCs faster than a tab can reconnect its long-poll) catch up immediately instead of waiting
+// for the 28s timeout — closing the race that made OAA/NPC turn notifications feel inconsistent.
+const lastEventForUser = new Map()
+let turnEventSeq = 0
+
+const watchAnyInitiativeTurn = (userId, res, sinceSeq) => {
   const key = String(userId)
+
+  const last = lastEventForUser.get(key)
+  if (last && Number(sinceSeq || 0) < last.seq) {
+    return res.json(last.payload)
+  }
+
   if (!pendingWatchers.has(key)) pendingWatchers.set(key, [])
   const list = pendingWatchers.get(key)
 
@@ -434,18 +447,20 @@ const advanceInitiativeTurn = async (oaaId, tableId) => {
   if (global.io) global.io.emit('initiative:turn', { tableId: String(tableId), currentTurnIndex: next, turnEntry })
 
   // Notify long-poll watchers for OAA + all accepted members (all open tabs per user)
-  const notifyPayload = { tableId: String(tableId), currentTurnIndex: next, turnEntry }
+  turnEventSeq += 1
+  const notifyPayload = { tableId: String(tableId), currentTurnIndex: next, turnEntry, seq: turnEventSeq }
   const notifyIds = new Set([String(table.oaaId)])
   for (const m of (table.members ?? [])) {
     if (m.status === 'accepted' && m.userId) notifyIds.add(String(m.userId))
   }
   for (const uid of notifyIds) {
+    lastEventForUser.set(uid, { seq: turnEventSeq, payload: notifyPayload })
     const list = pendingWatchers.get(uid) ?? []
     pendingWatchers.set(uid, [])
     list.forEach(w => w.finish(notifyPayload))
   }
 
-  return { currentTurnIndex: next, turnEntry }
+  return { currentTurnIndex: next, turnEntry, seq: turnEventSeq }
 }
 
 const setInitiativeRollOaa = async (oaaId, tableId, userId, total) => {

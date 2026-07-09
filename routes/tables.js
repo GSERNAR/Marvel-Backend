@@ -26,7 +26,7 @@ router.get('/for-sheet/:sheetId/absorb-targets', authMiddleware, handleError(req
 
 // Long-poll: holds the response open until a turn advances or 28 s timeout
 router.get('/initiative/watch', authMiddleware, (req, res) => {
-  try { watchAnyInitiativeTurn(req.tokenBody.id, res) }
+  try { watchAnyInitiativeTurn(req.tokenBody.id, res, req.query.since) }
   catch (err) { if (!res.headersSent) res.status(500).json({ error: 'Watch failed' }) }
 })
 
