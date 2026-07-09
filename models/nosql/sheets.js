@@ -29,6 +29,14 @@ const SheetScheme = new mongoose.Schema(
     webCartridges:  { type: Number, default: 10 },
     progressionHpBonus: { type: Number, default: 0 },
 
+    // Iron Man: per-form saved armor HP/PP, Tony's own HP/PP while suited up,
+    // and armor forms destroyed by lethal damage (locked out until repaired)
+    armorCurrentHp: { type: Object, default: {} },
+    armorCurrentPp: { type: Object, default: {} },
+    tonyCurrentHp:  { type: Number, default: null },
+    tonyCurrentPp:  { type: Number, default: null },
+    destroyedArmorFormIds: { type: Array, default: [] },
+
     // Per-form SP (multi-form characters like Moon Knight / Agent Venom)
     formSkillPoints: { type: Object, default: {} },
 

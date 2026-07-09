@@ -1,6 +1,12 @@
 const { tablesModel, sheetsModel, usersModel, formsModel, powersModel, charactersModel } = require('../models')
 const { ApiError, ErrorCode } = require('../common/apiError')
 
+// Ported from frontend src/pages/my-sheets/sheetMechanics.js computeMaxPP()
+const computeMaxPP = (powerStat, level) => {
+  const p = Math.min(Math.max(1, powerStat ?? 1), 10)
+  return p * 2 + Math.floor((level ?? 1) / 5) * 2
+}
+
 // Long-poll watchers: userId (string) → [{ finish, timer, done }, ...]
 // Array so multiple open tabs/windows for the same user all get notified.
 const pendingWatchers = new Map()
@@ -482,18 +488,78 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
   const sheet = await sheetsModel.findById(sheetId)
   if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
 
+  let armorDestroyed = false
+  let statusJustApplied = null
+
   if (body.damage != null) {
     const dmg = Number(body.damage)
     const shieldAbsorb = Math.min(sheet.shieldHp ?? 0, dmg)
-    sheet.shieldHp = (sheet.shieldHp ?? 0) - shieldAbsorb
+    const newShieldHp = (sheet.shieldHp ?? 0) - shieldAbsorb
     const hpBefore = sheet.currentHp ?? 0
     const remainingDmg = dmg - shieldAbsorb
-    sheet.currentHp = Math.max(0, hpBefore - remainingDmg)
-    if (sheet.currentHp === 0 && remainingDmg > hpBefore) {
-      const maxDeathHp = 30 + (sheet.level ?? 1) * 5
-      sheet.deathHp = Math.min(maxDeathHp, (sheet.deathHp ?? 0) + (remainingDmg - hpBefore))
-    } else if (sheet.currentHp > 0) {
-      sheet.deathHp = 0
+
+    // Iron Man: damage that brings the current armor's HP down to 0 (or below) destroys it
+    // instead of applying death-HP rules. Tony ejects into whatever armor is equipped inside
+    // it (Hulkbuster's sub-armor), or his base form otherwise. Armor locked until repaired.
+    // Mirrors the frontend's ResourcesPanel.jsx handleDealDamage so OAA-dealt damage behaves
+    // the same as damage dealt from the sheet's own Combat tab.
+    if (sheet.characterName === 'Iron Man' && sheet.formId && remainingDmg > 0 && remainingDmg >= hpBefore) {
+      const currentForm = await formsModel.findById(sheet.formId)
+      if (currentForm?.types?.includes('armor')) {
+        armorDestroyed = true
+        const destroyedFormId = sheet.formId
+        const isHulkbuster = /hulkbuster/i.test(currentForm.name ?? '')
+
+        let equipmentSlots = []
+        try { equipmentSlots = JSON.parse(sheet.textFields?.equipmentSlots || '[]') } catch { equipmentSlots = [] }
+        const equippedArmorSlot = isHulkbuster ? equipmentSlots.find(s => s?.formId && s?.isActive) : null
+        const subArmorFormId = equippedArmorSlot?.formId ?? null
+
+        const character = await charactersModel.findById(sheet.characterId)
+        const targetFormId = subArmorFormId ?? character?.defaultForm ?? null
+        const targetForm = targetFormId ? await formsModel.findById(targetFormId) : null
+
+        const armorCurrentHp = { ...(sheet.armorCurrentHp ?? {}) }
+        const armorCurrentPp = sheet.armorCurrentPp ?? {}
+        armorCurrentHp[destroyedFormId] = 0
+
+        let newCurrentHp, newCurrentPp
+        if (subArmorFormId && targetForm) {
+          const targetMaxHp = (targetForm.stats?.get('hp') ?? 0) + (sheet.progressionHpBonus ?? 0)
+          const targetPower = targetForm.stats?.get('power') ?? 1
+          const targetMaxPp = computeMaxPP(targetPower, sheet.level ?? 1)
+          newCurrentHp = armorCurrentHp[subArmorFormId] ?? targetMaxHp
+          newCurrentPp = armorCurrentPp[subArmorFormId] ?? targetMaxPp
+        } else {
+          newCurrentHp = sheet.tonyCurrentHp ?? 30
+          newCurrentPp = sheet.tonyCurrentPp ?? 0
+        }
+
+        const newEquipmentSlots = equipmentSlots.map(s => s?.formId === destroyedFormId ? { ...s, isActive: false } : s)
+        if (!sheet.textFields) sheet.textFields = {}
+        sheet.textFields.equipmentSlots = JSON.stringify(newEquipmentSlots)
+
+        sheet.shieldHp = newShieldHp
+        sheet.armorCurrentHp = armorCurrentHp
+        sheet.destroyedArmorFormIds = [...new Set([...(sheet.destroyedArmorFormIds ?? []), destroyedFormId])]
+        sheet.currentHp = newCurrentHp
+        sheet.currentPp = newCurrentPp
+        if (targetFormId) {
+          sheet.formId = targetFormId
+          sheet.formName = targetForm?.name ?? sheet.formName
+        }
+      }
+    }
+
+    if (!armorDestroyed) {
+      sheet.shieldHp = newShieldHp
+      sheet.currentHp = Math.max(0, hpBefore - remainingDmg)
+      if (sheet.currentHp === 0 && remainingDmg > hpBefore) {
+        const maxDeathHp = 30 + (sheet.level ?? 1) * 5
+        sheet.deathHp = Math.min(maxDeathHp, (sheet.deathHp ?? 0) + (remainingDmg - hpBefore))
+      } else if (sheet.currentHp > 0) {
+        sheet.deathHp = 0
+      }
     }
   }
 
@@ -513,13 +579,20 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
   if (body.statusId != null) {
     if (!sheet.specialResource) sheet.specialResource = {}
     if (!sheet.specialResource.statusEffects) sheet.specialResource.statusEffects = {}
-    sheet.specialResource.statusEffects[body.statusId] = { active: !!body.statusActive }
+    const wasActive = !!sheet.specialResource.statusEffects[body.statusId]?.active
+    const nowActive = !!body.statusActive
+    if (nowActive && !wasActive) statusJustApplied = body.statusId
+    sheet.specialResource.statusEffects[body.statusId] = { active: nowActive }
     sheet.markModified('specialResource')
   }
 
   await sheet.save()
   if (global.io) global.io.emit('sheet:updated', { sheetId: String(sheetId), sheet })
-  if (body.damage != null && global.io) global.io.emit('combat:damage', { sheetId: String(sheetId) })
+  if (body.damage != null && global.io) {
+    if (armorDestroyed) global.io.emit('armor:destroyed', { sheetId: String(sheetId) })
+    else global.io.emit('combat:damage', { sheetId: String(sheetId) })
+  }
+  if (statusJustApplied && global.io) global.io.emit('status:applied', { sheetId: String(sheetId), statusId: statusJustApplied })
   return { currentHp: sheet.currentHp, shieldHp: sheet.shieldHp ?? 0, deathHp: sheet.deathHp ?? 0 }
 }
 
