@@ -517,6 +517,11 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
   const sheet = await sheetsModel.findById(sheetId)
   if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
 
+  // Edge-detect the moment deathHp crosses the level cap, mirroring the frontend's own
+  // prevDeathHpRef check in SheetPage.jsx, so a global 'combat:kill' only fires once.
+  const maxDeathHp = 30 + (sheet.level ?? 1) * 5
+  const wasAlreadyDead = (sheet.deathHp ?? 0) >= maxDeathHp
+
   let armorDestroyed = false
   let statusJustApplied = null
   let ironManDebug = null // TEMP diagnostic — remove once the armor-destroy trigger is confirmed working
@@ -633,6 +638,8 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
     else global.io.emit('combat:damage', { sheetId: String(sheetId), defeated: sheet.currentHp === 0 })
   }
   if (body.heal != null && global.io) global.io.emit('combat:heal', { sheetId: String(sheetId) })
+  const nowDead = (sheet.deathHp ?? 0) >= maxDeathHp
+  if (nowDead && !wasAlreadyDead && global.io) global.io.emit('combat:kill', { sheetId: String(sheetId) })
   if (statusJustApplied && global.io) global.io.emit('status:applied', { sheetId: String(sheetId), statusId: statusJustApplied })
   return { currentHp: sheet.currentHp, shieldHp: sheet.shieldHp ?? 0, deathHp: sheet.deathHp ?? 0, ironManDebug }
 }
