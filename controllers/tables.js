@@ -463,6 +463,39 @@ const advanceInitiativeTurn = async (oaaId, tableId) => {
   return { currentTurnIndex: next, turnEntry, seq: turnEventSeq }
 }
 
+const reverseInitiativeTurn = async (oaaId, tableId) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+  if (!table.initiative?.order?.length) throw new ApiError(ErrorCode.BAD_REQUEST, 'No published order')
+
+  const order = table.initiative.order
+  const current = table.initiative.currentTurnIndex ?? -1
+  const prev = current <= 0 ? order.length - 1 : current - 1
+  table.initiative.currentTurnIndex = prev
+  table.markModified('initiative')
+  await table.save()
+
+  const turnEntry = order[prev]
+  if (global.io) global.io.emit('initiative:turn', { tableId: String(tableId), currentTurnIndex: prev, turnEntry })
+
+  // Notify long-poll watchers for OAA + all accepted members (all open tabs per user)
+  turnEventSeq += 1
+  const notifyPayload = { tableId: String(tableId), currentTurnIndex: prev, turnEntry, seq: turnEventSeq }
+  const notifyIds = new Set([String(table.oaaId)])
+  for (const m of (table.members ?? [])) {
+    if (m.status === 'accepted' && m.userId) notifyIds.add(String(m.userId))
+  }
+  for (const uid of notifyIds) {
+    lastEventForUser.set(uid, { seq: turnEventSeq, payload: notifyPayload })
+    const list = pendingWatchers.get(uid) ?? []
+    pendingWatchers.set(uid, [])
+    list.forEach(w => w.finish(notifyPayload))
+  }
+
+  return { currentTurnIndex: prev, turnEntry, seq: turnEventSeq }
+}
+
 const setInitiativeRollOaa = async (oaaId, tableId, userId, total) => {
   const table = await tablesModel.findById(tableId)
   if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
@@ -652,7 +685,7 @@ module.exports = {
   kickMember, leaveTable,
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
-  publishInitiativeOrder, advanceInitiativeTurn, setInitiativeRollOaa, clearInitiative,
+  publishInitiativeOrder, advanceInitiativeTurn, reverseInitiativeTurn, setInitiativeRollOaa, clearInitiative,
   oaaSheetCombatUpdate,
   watchAnyInitiativeTurn,
 }
