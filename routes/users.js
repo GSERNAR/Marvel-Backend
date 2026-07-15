@@ -9,6 +9,9 @@ const {
     registerUser,
     generateUserToken,
     updateUser,
+    updateUsername,
+    changePassword,
+    requestEmailChange,
     updateFavourites,
     deleteUser,
     verifyEmail,
@@ -57,6 +60,18 @@ router.put('/:id', handleUserAccess(req =>
 // Update favourites (player or admin only)
 router.put('/:id/favourites', authMiddleware, handleUserAccess(req =>
   updateFavourites(req.params.id, req.body.favourites)
+))
+
+router.put('/:id/username', handleUserAccess(req =>
+    updateUsername(req.params.id, req.body.username)
+))
+
+router.put('/:id/password', handleUserAccess(req =>
+    changePassword(req.params.id, req.body.currentPassword, req.body.newPassword)
+))
+
+router.put('/:id/email', handleUserAccess(req =>
+    requestEmailChange(req.params.id, req.body.newEmail, req.body.currentPassword)
 ))
 
 

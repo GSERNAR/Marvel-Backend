@@ -3,7 +3,7 @@ const { usersModel } = require('../models')
 const { ErrorCode, ApiError } = require('../common/apiError')
 const { hashPassword, validatePassword } = require('../common/bcryptUtil')
 const { generateToken } = require('../common/jwtUtil')
-const { sendPasswordResetEmail, sendVerificationEmail } = require('../common/mailer')
+const { sendPasswordResetEmail, sendVerificationEmail, sendEmailChangeVerification } = require('../common/mailer')
 
 const getUsers = async () => {
   const users =  await usersModel.find({})
@@ -68,13 +68,11 @@ const generateUserToken = async (userDetails) => {
 }
 
 const updateUser = async (id, changes) => {
-  if (changes.password) {
-    changes.password = await hashPassword(changes.password)
-  }
   delete changes._id
   delete changes.roles
   delete changes.username
   delete changes.email
+  delete changes.password
   delete changes.createdAt
   delete changes.updatedAt
   delete changes.favourites
@@ -83,6 +81,67 @@ const updateUser = async (id, changes) => {
     throw new ApiError(ErrorCode.NOT_FOUND)
   }
   return userView(result)
+}
+
+// Username, password and email each go through their own endpoint below — username/email need
+// a uniqueness check, and password/email changes require the current password to be re-entered
+// as a defense against a hijacked session silently taking over the account.
+
+const updateUsername = async (id, newUsername) => {
+  const trimmed = (newUsername ?? '').trim()
+  if (!trimmed) throw new ApiError(ErrorCode.BAD_REQUEST, 'Username is required')
+
+  const taken = await usersModel.findOne({ username: trimmed, _id: { $ne: id } })
+  if (taken) throw new ApiError(ErrorCode.CONFLICT, 'That username is already taken')
+
+  const result = await usersModel.findByIdAndUpdate(id, { username: trimmed }, { new: true })
+  if (!result) throw new ApiError(ErrorCode.NOT_FOUND)
+  return userView(result)
+}
+
+const changePassword = async (id, currentPassword, newPassword) => {
+  if (!currentPassword || !newPassword) {
+    throw new ApiError(ErrorCode.BAD_REQUEST, 'Current and new password are required')
+  }
+  const user = await usersModel.findById(id)
+  if (!user) throw new ApiError(ErrorCode.NOT_FOUND)
+
+  const validPassword = await validatePassword(currentPassword, user.password)
+  if (!validPassword) throw new ApiError(ErrorCode.FORBIDDEN, 'Current password is incorrect')
+
+  user.password = await hashPassword(newPassword)
+  await user.save()
+  return { ok: true }
+}
+
+// Sets a pending email + sends a confirmation link to the NEW address. The account's actual
+// email only switches once that link is clicked (see verifyEmail below), so a mistyped or
+// unreachable new address can't lock the user out of their account.
+const requestEmailChange = async (id, newEmail, currentPassword) => {
+  const trimmed = (newEmail ?? '').toLowerCase().trim()
+  if (!trimmed || !currentPassword) {
+    throw new ApiError(ErrorCode.BAD_REQUEST, 'New email and current password are required')
+  }
+  const user = await usersModel.findById(id)
+  if (!user) throw new ApiError(ErrorCode.NOT_FOUND)
+
+  const validPassword = await validatePassword(currentPassword, user.password)
+  if (!validPassword) throw new ApiError(ErrorCode.FORBIDDEN, 'Current password is incorrect')
+
+  if (trimmed === user.email) throw new ApiError(ErrorCode.BAD_REQUEST, 'That is already your email address')
+
+  const taken = await usersModel.findOne({ email: trimmed, _id: { $ne: id } })
+  if (taken) throw new ApiError(ErrorCode.CONFLICT, 'That email address is already in use')
+
+  const rawToken = crypto.randomBytes(32).toString('hex')
+  user.pendingEmail = trimmed
+  user.emailVerificationToken = crypto.createHash('sha256').update(rawToken).digest('hex')
+  await user.save()
+
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'
+  await sendEmailChangeVerification(trimmed, user.name || user.username, `${frontendUrl}/verify-email/${rawToken}`)
+
+  return userView(user)
 }
 
 // Add at the top with the others
@@ -126,6 +185,12 @@ const verifyEmail = async (rawToken) => {
 
   if (!user) throw new ApiError(ErrorCode.BAD_REQUEST, 'Verification link is invalid or has already been used')
 
+  // A pending email change confirms into the real email field; otherwise this is the
+  // original registration verification link.
+  if (user.pendingEmail) {
+    user.email = user.pendingEmail
+    user.pendingEmail = undefined
+  }
   user.emailVerified = true
   user.emailVerificationToken = undefined
   await user.save()
@@ -174,6 +239,9 @@ module.exports = {
   registerUser,
   generateUserToken,
   updateUser,
+  updateUsername,
+  changePassword,
+  requestEmailChange,
   updateFavourites,
   deleteUser,
   verifyEmail,

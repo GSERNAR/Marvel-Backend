@@ -48,4 +48,24 @@ const sendVerificationEmail = async (to, name, verifyUrl) => {
   })
 }
 
-module.exports = { sendPasswordResetEmail, sendVerificationEmail }
+const sendEmailChangeVerification = async (to, name, verifyUrl) => {
+  await transporter.sendMail({
+    from: `"Marvel RPG" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: 'Marvel RPG — Confirm your new email address',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0f172a; color: #f1f5f9; padding: 32px; border-radius: 12px;">
+        <h2 style="color: #ef4444; margin-top: 0;">Marvel RPG</h2>
+        <p>Hi ${name},</p>
+        <p>You asked to change your account's email address to this one. Click the button below to confirm the switch:</p>
+        <a href="${verifyUrl}" style="display: inline-block; margin: 16px 0; padding: 12px 28px; background: #ef4444; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">
+          Confirm New Email
+        </a>
+        <p style="color: #94a3b8; font-size: 13px;">Your account's email won't change until you confirm. If you didn't request this, you can safely ignore this email.</p>
+        <p style="color: #94a3b8; font-size: 12px; word-break: break-all;">Or copy this link: ${verifyUrl}</p>
+      </div>
+    `,
+  })
+}
+
+module.exports = { sendPasswordResetEmail, sendVerificationEmail, sendEmailChangeVerification }

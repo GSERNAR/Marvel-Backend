@@ -50,6 +50,8 @@ const UserScheme = new mongoose.Schema(
         passwordResetExpires: { type: Date },
         emailVerified: { type: Boolean, default: false },
         emailVerificationToken: { type: String },
+        pendingEmail: { type: String },
+        preferences: { type: Object, default: {} },
     },
     {
         timestamps: true,
