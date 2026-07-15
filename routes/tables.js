@@ -11,6 +11,7 @@ const {
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
   publishInitiativeOrder, advanceInitiativeTurn, reverseInitiativeTurn, setInitiativeRollOaa, clearInitiative,
+  setCombatRole,
   oaaSheetCombatUpdate,
   watchAnyInitiativeTurn,
 } = require('../controllers/tables')
@@ -114,6 +115,10 @@ router.post('/:id/initiative/clear', authMiddleware, handleError(req =>
 
 router.patch('/:id/sheets/:sheetId/combat', authMiddleware, handleError(req =>
   oaaSheetCombatUpdate(req.tokenBody.id, req.params.id, req.params.sheetId, req.body)
+))
+
+router.post('/:id/sheets/:sheetId/combat-role', authMiddleware, handleError(req =>
+  setCombatRole(req.tokenBody.id, req.params.id, req.params.sheetId, req.body.role)
 ))
 
 module.exports = router

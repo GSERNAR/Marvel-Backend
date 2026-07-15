@@ -112,6 +112,7 @@ const getTable = async (userId, tableId) => {
     oaaSheetIds: table.oaaSheetIds || [],
     members,
     initiative: table.initiative || null,
+    combatRoles: table.combatRoles || {},
     isOaa,
     isMember: !!memberEntry && memberEntry.status === 'accepted',
     isPending: !!memberEntry && memberEntry.status === 'pending',
@@ -536,6 +537,31 @@ const clearInitiative = async (oaaId, tableId) => {
   return { ok: true }
 }
 
+// Persists a combat role ('Boss' | 'NPC' | 'Minion' | falsy-to-clear) for a sheet within this
+// table, so any viewer (not just the OAA's own browser) can tell a sheet's current role — used
+// e.g. to gate a character's boss-only forms to sheets currently tagged Boss.
+const setCombatRole = async (oaaId, tableId, sheetId, role) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+
+  const validIds = new Set([
+    ...table.members.filter(m => m.sheetId).map(m => String(m.sheetId)),
+    ...table.oaaSheetIds.map(String),
+  ])
+  if (!validIds.has(String(sheetId))) throw new ApiError(ErrorCode.FORBIDDEN, 'Sheet not in table')
+
+  const combatRoles = { ...(table.combatRoles ?? {}) }
+  if (role) combatRoles[String(sheetId)] = role
+  else delete combatRoles[String(sheetId)]
+
+  table.combatRoles = combatRoles
+  table.markModified('combatRoles')
+  await table.save()
+
+  return { combatRoles }
+}
+
 const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
   const table = await tablesModel.findById(tableId)
   if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
@@ -686,6 +712,7 @@ module.exports = {
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
   publishInitiativeOrder, advanceInitiativeTurn, reverseInitiativeTurn, setInitiativeRollOaa, clearInitiative,
+  setCombatRole,
   oaaSheetCombatUpdate,
   watchAnyInitiativeTurn,
 }

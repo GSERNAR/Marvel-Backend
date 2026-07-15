@@ -45,6 +45,10 @@ const CharacterScheme = new Schema(
         forms: [{
             type: String,
         }],
+        // Subset of `forms` that only a sheet currently tagged "Boss" in a table may switch into.
+        boss: [{
+            type: String,
+        }],
         order: {
             type: Number
         }

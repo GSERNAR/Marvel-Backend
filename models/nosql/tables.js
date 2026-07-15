@@ -20,6 +20,9 @@ const TableSchema = new mongoose.Schema(
     // initiative: { status, rolls: { [userId]: { username, characterName, total, isSpeedster } },
     //               tiebreakerUserIds, tiebreakerRolls: { [userId]: number }, order }
     initiative: { type: mongoose.Schema.Types.Mixed, default: null },
+    // combatRoles: { [sheetId]: 'Boss' | 'NPC' | 'Minion' } — persisted so any viewer (not just the
+    // OAA's own browser) can tell a sheet's current combat role, e.g. to gate boss-form access.
+    combatRoles: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true, versionKey: false }
 )
