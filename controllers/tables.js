@@ -7,6 +7,13 @@ const computeMaxPP = (powerStat, level) => {
   return p * 2 + Math.floor((level ?? 1) / 5) * 2
 }
 
+// Ported from frontend src/pages/my-sheets/sheetMechanics.js ARMORED_HERO_BASE_FIELDS —
+// keep both copies in sync when adding a new armored hero.
+const ARMORED_HERO_BASE_FIELDS = {
+  'Iron Man':    { hpField: 'tonyCurrentHp',   ppField: 'tonyCurrentPp' },
+  'War Machine': { hpField: 'rhodesCurrentHp', ppField: 'rhodesCurrentPp' },
+}
+
 // forms/characters can have _id stored as plain strings (not real ObjectIds) from older
 // bulk imports, which breaks Mongoose's auto-casting findById(). Fetch-all + string compare
 // instead, matching how the working GET /forms and GET /characters list routes already do it.
@@ -593,12 +600,13 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
     const hpBefore = sheet.currentHp ?? 0
     const remainingDmg = dmg - shieldAbsorb
 
-    // Iron Man: damage that brings the current armor's HP down to 0 (or below) destroys it
-    // instead of applying death-HP rules. Tony ejects into whatever armor is equipped inside
-    // it (Hulkbuster's sub-armor), or his base form otherwise. Armor locked until repaired.
-    // Mirrors the frontend's ResourcesPanel.jsx handleDealDamage so OAA-dealt damage behaves
-    // the same as damage dealt from the sheet's own Combat tab.
-    if (sheet.characterName === 'Iron Man' && sheet.formId && remainingDmg > 0 && remainingDmg >= hpBefore) {
+    // Armored heroes (Iron Man, War Machine): damage that brings the current armor's HP down
+    // to 0 (or below) destroys it instead of applying death-HP rules. The pilot ejects into
+    // whatever armor is equipped inside it (Hulkbuster's sub-armor), or their base form otherwise.
+    // Armor locked until repaired. Mirrors the frontend's ResourcesPanel.jsx handleDealDamage so
+    // OAA-dealt damage behaves the same as damage dealt from the sheet's own Combat tab.
+    const pilotFields = ARMORED_HERO_BASE_FIELDS[sheet.characterName]
+    if (pilotFields && sheet.formId && remainingDmg > 0 && remainingDmg >= hpBefore) {
       const currentForm = await findFormById(sheet.formId)
       ironManDebug = {
         formId: sheet.formId ?? null,
@@ -634,8 +642,8 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
           newCurrentHp = armorCurrentHp[subArmorFormId] ?? targetMaxHp
           newCurrentPp = armorCurrentPp[subArmorFormId] ?? targetMaxPp
         } else {
-          newCurrentHp = sheet.tonyCurrentHp ?? 30
-          newCurrentPp = sheet.tonyCurrentPp ?? 0
+          newCurrentHp = sheet[pilotFields.hpField] ?? 30
+          newCurrentPp = sheet[pilotFields.ppField] ?? 0
         }
 
         const newEquipmentSlots = equipmentSlots.map(s => s?.formId === destroyedFormId ? { ...s, isActive: false } : s)
@@ -693,8 +701,8 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
   if (global.io) global.io.emit('sheet:updated', { sheetId: String(sheetId), sheet })
   if (body.damage != null && global.io) {
     if (armorDestroyed) global.io.emit('armor:destroyed', { sheetId: String(sheetId) })
-    // Iron Man's armorDestroyed branch never sets currentHp to 0 here — it swaps into the
-    // sub-armor/base form's HP instead — so this naturally never fires for him at 0 HP.
+    // The armorDestroyed branch never sets currentHp to 0 here — it swaps into the
+    // sub-armor/base form's HP instead — so this naturally never fires at 0 HP for armored heroes.
     else global.io.emit('combat:damage', { sheetId: String(sheetId), defeated: sheet.currentHp === 0 })
   }
   if (body.heal != null && global.io) global.io.emit('combat:heal', { sheetId: String(sheetId) })
