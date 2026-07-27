@@ -10,7 +10,7 @@ const {
   kickMember, leaveTable,
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
-  publishInitiativeOrder, advanceInitiativeTurn, reverseInitiativeTurn, setInitiativeRollOaa, clearInitiative,
+  publishInitiativeOrder, advanceInitiativeTurn, reverseInitiativeTurn, setInitiativeRollOaa, setSheetInitiativeRoll, clearInitiative,
   setCombatRole,
   oaaSheetCombatUpdate,
   watchAnyInitiativeTurn,
@@ -107,6 +107,10 @@ router.post('/:id/initiative/previous-turn', authMiddleware, handleError(req =>
 
 router.post('/:id/initiative/set-roll', authMiddleware, handleError(req =>
   setInitiativeRollOaa(req.tokenBody.id, req.params.id, req.body.userId, req.body.total)
+))
+
+router.post('/:id/initiative/sheet-roll', authMiddleware, handleError(req =>
+  setSheetInitiativeRoll(req.tokenBody.id, req.params.id, req.body.sheetId, req.body.total, req.body.isSpeedster)
 ))
 
 router.post('/:id/initiative/clear', authMiddleware, handleError(req =>

@@ -371,7 +371,7 @@ const requestInitiative = async (oaaId, tableId) => {
   if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
   if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
 
-  table.initiative = { status: 'requesting', rolls: {}, tiebreakerUserIds: [], tiebreakerRolls: {}, order: null }
+  table.initiative = { status: 'requesting', rolls: {}, sheetRolls: {}, tiebreakerUserIds: [], tiebreakerRolls: {}, order: null }
   table.markModified('initiative')
   await table.save()
   return { ok: true }
@@ -528,6 +528,30 @@ const setInitiativeRollOaa = async (oaaId, tableId, userId, total) => {
     characterName,
     total: Number(total),
     isSpeedster: existing.isSpeedster ?? false,
+  }
+  table.markModified('initiative')
+  await table.save()
+  return { ok: true }
+}
+
+// OAA sheets tagged 'Player' have no user account to roll for themselves — the OAA rolls on
+// their behalf here, storing the result separately from userId-keyed `rolls` so tie-detection
+// and the self-roll/tiebreaker flow (both keyed by the authenticated caller's userId) stay untouched.
+const setSheetInitiativeRoll = async (oaaId, tableId, sheetId, total, isSpeedster) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+  if (!table.initiative) throw new ApiError(ErrorCode.BAD_REQUEST, 'No initiative in progress')
+  if (!table.oaaSheetIds.map(String).includes(String(sheetId))) throw new ApiError(ErrorCode.FORBIDDEN, 'Sheet not in table')
+
+  const sheet = await sheetsModel.findById(sheetId, 'displayName characterName').lean()
+  if (!table.initiative.sheetRolls) table.initiative.sheetRolls = {}
+
+  table.initiative.sheetRolls[String(sheetId)] = {
+    displayName: sheet?.displayName ?? null,
+    characterName: sheet?.characterName ?? null,
+    total: Number(total),
+    isSpeedster: !!isSpeedster,
   }
   table.markModified('initiative')
   await table.save()
@@ -720,7 +744,7 @@ module.exports = {
   kickMember, leaveTable,
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
-  publishInitiativeOrder, advanceInitiativeTurn, reverseInitiativeTurn, setInitiativeRollOaa, clearInitiative,
+  publishInitiativeOrder, advanceInitiativeTurn, reverseInitiativeTurn, setInitiativeRollOaa, setSheetInitiativeRoll, clearInitiative,
   setCombatRole,
   oaaSheetCombatUpdate,
   watchAnyInitiativeTurn,
