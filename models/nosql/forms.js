@@ -64,11 +64,12 @@ const FormScheme = new Schema(
         character: {
             type: String
         },
-        // References a document in the separate `vehicles` collection this form can ride/pilot,
-        // e.g. Green Goblin's form -> Goblin Glider vehicle. Optional, most forms have none.
-        vehicle: {
+        // References one or more documents in the separate `vehicles` collection this form can
+        // ride/pilot, e.g. Green Goblin's form -> Goblin Glider vehicle. A single legacy string
+        // id is auto-cast to a one-element array by Mongoose. Optional, most forms have none.
+        vehicle: [{
             type: String
-        },
+        }],
         noSkillUpgrade: {
             type: Boolean,
             default: false
