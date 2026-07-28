@@ -12,9 +12,6 @@ const FormType = {
     },
     ARMOR: {
         value: 'armor'
-    },
-    VEHICLE: {
-        value: 'vehicle'
     }
 }
 
@@ -67,8 +64,8 @@ const FormScheme = new Schema(
         character: {
             type: String
         },
-        // References another form (typically types: ['vehicle']) this form can ride/pilot,
-        // e.g. Green Goblin's form -> Goblin Glider form. Optional, most forms have none.
+        // References a document in the separate `vehicles` collection this form can ride/pilot,
+        // e.g. Green Goblin's form -> Goblin Glider vehicle. Optional, most forms have none.
         vehicle: {
             type: String
         },

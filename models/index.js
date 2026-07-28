@@ -1,6 +1,7 @@
 const { usersModel } = require('./nosql/users')
 const { charactersModel } = require('./nosql/characters')
 const { formsModel } = require('./nosql/forms')
+const { vehiclesModel } = require('./nosql/vehicles')
 const { powersModel } = require('./nosql/powers')
 const { attributeModel } = require('./nosql/attributes')
 const { attributeValuesModel, attributeStacksModel } = require('./nosql/attributeStacks')
@@ -12,6 +13,7 @@ module.exports = {
     usersModel,
     charactersModel,
     formsModel,
+    vehiclesModel,
     powersModel,
     ModulesModel,
     attributeModel,
