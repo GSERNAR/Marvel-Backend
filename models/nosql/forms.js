@@ -12,6 +12,9 @@ const FormType = {
     },
     ARMOR: {
         value: 'armor'
+    },
+    VEHICLE: {
+        value: 'vehicle'
     }
 }
 
@@ -62,6 +65,11 @@ const FormScheme = new Schema(
             default: FormType.NORMAL.value
         }],
         character: {
+            type: String
+        },
+        // References another form (typically types: ['vehicle']) this form can ride/pilot,
+        // e.g. Green Goblin's form -> Goblin Glider form. Optional, most forms have none.
+        vehicle: {
             type: String
         },
         noSkillUpgrade: {
