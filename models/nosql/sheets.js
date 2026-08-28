@@ -148,6 +148,7 @@ const SheetScheme = new mongoose.Schema(
 
     // Inventory
     inventory: { type: Array, default: [] },
+    materials: { type: Array, default: [] },
     iso8: { type: Array, default: [] }
   },
   { timestamps: true, versionKey: false }

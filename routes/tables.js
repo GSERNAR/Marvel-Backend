@@ -14,6 +14,8 @@ const {
   setCombatRole,
   oaaSheetCombatUpdate,
   watchAnyInitiativeTurn,
+  setMarket, closeMarket, buyFromMarket,
+  grantCredits, transferCredits,
 } = require('../controllers/tables')
 
 router.get('/', authMiddleware, handleError(req => getTables(req.tokenBody.id)))
@@ -123,6 +125,28 @@ router.patch('/:id/sheets/:sheetId/combat', authMiddleware, handleError(req =>
 
 router.post('/:id/sheets/:sheetId/combat-role', authMiddleware, handleError(req =>
   setCombatRole(req.tokenBody.id, req.params.id, req.params.sheetId, req.body.role)
+))
+
+// ── Markets & S.H.I.E.L.D. Credits ───────────────────────────────────────────
+
+router.post('/:id/markets/:marketKey', authMiddleware, handleError(req =>
+  setMarket(req.tokenBody.id, req.params.id, req.params.marketKey, req.body.slots)
+))
+
+router.delete('/:id/markets/:marketKey', authMiddleware, handleError(req =>
+  closeMarket(req.tokenBody.id, req.params.id, req.params.marketKey)
+))
+
+router.post('/:id/markets/:marketKey/buy', authMiddleware, handleError(req =>
+  buyFromMarket(req.tokenBody.id, req.params.id, req.params.marketKey, req.body.slotId, req.body.buyerSheetId)
+))
+
+router.post('/:id/credits/grant', authMiddleware, handleError(req =>
+  grantCredits(req.tokenBody.id, req.params.id, req.body.sheetId, req.body.amount)
+))
+
+router.post('/:id/credits/transfer', authMiddleware, handleError(req =>
+  transferCredits(req.tokenBody.id, req.params.id, req.body.fromSheetId, req.body.toSheetId, req.body.amount)
 ))
 
 module.exports = router

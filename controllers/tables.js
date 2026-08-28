@@ -1,4 +1,4 @@
-const { tablesModel, sheetsModel, usersModel, formsModel, powersModel, charactersModel } = require('../models')
+const { tablesModel, sheetsModel, usersModel, formsModel, powersModel, charactersModel, ModulesModel } = require('../models')
 const { ApiError, ErrorCode } = require('../common/apiError')
 
 // Ported from frontend src/pages/my-sheets/sheetMechanics.js computeMaxPP()
@@ -121,6 +121,7 @@ const getTable = async (userId, tableId) => {
     members,
     initiative: table.initiative || null,
     combatRoles: table.combatRoles || {},
+    activeMarkets: table.activeMarkets || {},
     isOaa,
     isMember: !!memberEntry && memberEntry.status === 'accepted',
     isPending: !!memberEntry && memberEntry.status === 'pending',
@@ -736,6 +737,217 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
   return { currentHp: sheet.currentHp, shieldHp: sheet.shieldHp ?? 0, deathHp: sheet.deathHp ?? 0, ironManDebug }
 }
 
+// ── Markets & S.H.I.E.L.D. Credits ──────────────────────────────────────────────
+
+const MARKET_KEYS = new Set(['shield', 'tinkerer', 'emporium', 'masque'])
+
+const findModulesByIds = async (ids) => {
+  if (!ids || ids.length === 0) return []
+  const idSet = new Set(ids.map(String))
+  const modules = await ModulesModel.find({})
+  return modules.filter(m => idSet.has(String(m._id)))
+}
+
+// Mirrors totalConsumableSlots in frontend InventoryTab.jsx: base 2 slots, +2 per equipped
+// "Micro Compartments" module belonging to the sheet's current form (616 Armor mechanic).
+const getTotalConsumableSlots = async (sheet) => {
+  if (!sheet.formId) return 2
+  const form = await findFormById(sheet.formId)
+  const formModules = await findModulesByIds(form?.modules ?? [])
+  const equippedModuleIds = (sheet.equippedModuleIds ?? []).map(String)
+
+  let microCompartmentCount = 0
+  for (const m of formModules) {
+    if (!(m.name ?? '').toLowerCase().includes('micro compartments')) continue
+    microCompartmentCount += equippedModuleIds.filter(id => id === String(m._id)).length
+  }
+  return 2 + microCompartmentCount * 2
+}
+
+const genSlotId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+
+function normalizeMaterialName(name = '') {
+  return String(name).trim().replace(/\s*\(common\)\s*$/i, '').replace(/\s+/g, ' ').toLowerCase()
+}
+
+// OAA generates the 12-slot market client-side (src/pages/my-tables/marketGenerator.js) and
+// posts the result here — the backend just stores it as the shared, authoritative stock state
+// every table participant's Buy action reads from and mutates.
+const setMarket = async (oaaId, tableId, marketKey, slots) => {
+  if (!MARKET_KEYS.has(marketKey)) throw new ApiError(ErrorCode.BAD_REQUEST, 'Unknown market')
+  if (!Array.isArray(slots)) throw new ApiError(ErrorCode.BAD_REQUEST, 'slots must be an array')
+
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+
+  const activeMarkets = { ...(table.activeMarkets ?? {}) }
+  activeMarkets[marketKey] = { slots, activatedAt: new Date().toISOString() }
+  table.activeMarkets = activeMarkets
+  table.markModified('activeMarkets')
+  await table.save()
+
+  if (global.io) global.io.emit('table:market-updated', { tableId: String(tableId), marketKey, market: activeMarkets[marketKey] })
+  return { activeMarkets: table.activeMarkets }
+}
+
+const closeMarket = async (oaaId, tableId, marketKey) => {
+  if (!MARKET_KEYS.has(marketKey)) throw new ApiError(ErrorCode.BAD_REQUEST, 'Unknown market')
+
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+
+  const activeMarkets = { ...(table.activeMarkets ?? {}) }
+  activeMarkets[marketKey] = null
+  table.activeMarkets = activeMarkets
+  table.markModified('activeMarkets')
+  await table.save()
+
+  if (global.io) global.io.emit('table:market-updated', { tableId: String(tableId), marketKey, market: null })
+  return { activeMarkets: table.activeMarkets }
+}
+
+// Players buy only for their own active sheet; the OAA buys only for their own NPC sheets.
+// Stock, credits, and slot-availability are all re-checked here (not trusted from the client)
+// since this is the one action multiple table participants can race against each other on.
+const buyFromMarket = async (userId, tableId, marketKey, slotId, buyerSheetId) => {
+  if (!MARKET_KEYS.has(marketKey)) throw new ApiError(ErrorCode.BAD_REQUEST, 'Unknown market')
+
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+
+  const isOaa = String(table.oaaId) === String(userId)
+  const member = table.members.find(m => String(m.userId) === String(userId) && m.status === 'accepted')
+  if (!isOaa && !member) throw new ApiError(ErrorCode.FORBIDDEN, 'Not a table participant')
+
+  const isOwnNpc = isOaa && table.oaaSheetIds.map(String).includes(String(buyerSheetId))
+  const isOwnMemberSheet = !!member && String(member.sheetId) === String(buyerSheetId)
+  if (!isOwnNpc && !isOwnMemberSheet) throw new ApiError(ErrorCode.FORBIDDEN, 'You can only buy for your own sheet')
+
+  const market = table.activeMarkets?.[marketKey]
+  if (!market?.slots) throw new ApiError(ErrorCode.BAD_REQUEST, 'Market is not active')
+  const slot = market.slots.find(s => String(s.id) === String(slotId))
+  if (!slot) throw new ApiError(ErrorCode.NOT_FOUND, 'Item not found')
+  if ((slot.stock ?? 0) <= 0) throw new ApiError(ErrorCode.BAD_REQUEST, 'Item is out of stock')
+
+  const sheet = await sheetsModel.findById(buyerSheetId)
+  if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
+
+  const price = Number(slot.price) || 0
+  if ((sheet.shieldCredits ?? 0) < price) throw new ApiError(ErrorCode.BAD_REQUEST, 'Not enough S.H.I.E.L.D. Credits')
+
+  if (slot.entryType === 'item') {
+    const isEquipment = slot.type === 'Equipment'
+    if (!sheet.textFields) sheet.textFields = {}
+
+    if (isEquipment) {
+      let equipmentSlots = []
+      try { equipmentSlots = JSON.parse(sheet.textFields.equipmentSlots || '[]') } catch { equipmentSlots = [] }
+      if (equipmentSlots.length >= 2) throw new ApiError(ErrorCode.BAD_REQUEST, 'No free equipment slot')
+      equipmentSlots.push({ id: genSlotId(), name: slot.name, effect: slot.effect ?? '', category: slot.category })
+      sheet.textFields.equipmentSlots = JSON.stringify(equipmentSlots)
+    } else {
+      let consumableSlots = []
+      try { consumableSlots = JSON.parse(sheet.textFields.consumableSlots || '[]') } catch { consumableSlots = [] }
+      const totalConsumableSlots = await getTotalConsumableSlots(sheet)
+      if (consumableSlots.length >= totalConsumableSlots) throw new ApiError(ErrorCode.BAD_REQUEST, 'No free consumable slot')
+      consumableSlots.push({ id: genSlotId(), name: slot.name, effect: slot.effect ?? '', category: slot.category, uses: 1 })
+      sheet.textFields.consumableSlots = JSON.stringify(consumableSlots)
+    }
+    sheet.markModified('textFields')
+  } else {
+    const materials = [...(sheet.materials ?? [])]
+    const existing = materials.find(m => normalizeMaterialName(m.name) === normalizeMaterialName(slot.name) && m.category === slot.category)
+    if (existing) existing.quantity = (existing.quantity ?? 0) + 1
+    else materials.push({ id: genSlotId(), name: slot.name, category: slot.category, rarity: slot.rarity, quantity: 1 })
+    sheet.materials = materials
+  }
+
+  sheet.shieldCredits = (sheet.shieldCredits ?? 0) - price
+  slot.stock = (slot.stock ?? 0) - 1
+
+  table.markModified('activeMarkets')
+  await table.save()
+  await sheet.save()
+
+  if (global.io) {
+    global.io.emit('table:market-updated', { tableId: String(tableId), marketKey, market: table.activeMarkets[marketKey] })
+    global.io.emit('sheet:updated', { sheetId: String(buyerSheetId), sheet })
+  }
+
+  return { sheet, market: table.activeMarkets[marketKey] }
+}
+
+// OAA-only: grants (or removes, via a negative amount) S.H.I.E.L.D. Credits on any table sheet.
+// This is the only way credits are added — players can no longer edit shieldCredits directly
+// on their own sheet (see SheetPage.jsx), only spend it (buyFromMarket) or send it (transferCredits).
+const grantCredits = async (oaaId, tableId, sheetId, amount) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+
+  const validIds = new Set([
+    ...table.members.filter(m => m.sheetId).map(m => String(m.sheetId)),
+    ...table.oaaSheetIds.map(String),
+  ])
+  if (!validIds.has(String(sheetId))) throw new ApiError(ErrorCode.FORBIDDEN, 'Sheet not in table')
+
+  const amt = Number(amount)
+  if (!Number.isFinite(amt)) throw new ApiError(ErrorCode.BAD_REQUEST, 'Invalid amount')
+
+  const sheet = await sheetsModel.findById(sheetId)
+  if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
+
+  sheet.shieldCredits = Math.max(0, (sheet.shieldCredits ?? 0) + amt)
+  await sheet.save()
+
+  if (global.io) global.io.emit('sheet:updated', { sheetId: String(sheetId), sheet })
+  return { shieldCredits: sheet.shieldCredits }
+}
+
+// Any participant can send credits from their own sheet (a player's active sheet, or one of the
+// OAA's NPCs) to any other sheet visible at the table — the recipient doesn't need to be present.
+const transferCredits = async (userId, tableId, fromSheetId, toSheetId, amount) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+
+  const isOaa = String(table.oaaId) === String(userId)
+  const member = table.members.find(m => String(m.userId) === String(userId) && m.status === 'accepted')
+  if (!isOaa && !member) throw new ApiError(ErrorCode.FORBIDDEN, 'Not a table participant')
+
+  const isOwnNpc = isOaa && table.oaaSheetIds.map(String).includes(String(fromSheetId))
+  const isOwnMemberSheet = !!member && String(member.sheetId) === String(fromSheetId)
+  if (!isOwnNpc && !isOwnMemberSheet) throw new ApiError(ErrorCode.FORBIDDEN, 'You can only send credits from your own sheet')
+
+  const validTargets = new Set([
+    ...table.members.filter(m => m.sheetId).map(m => String(m.sheetId)),
+    ...table.oaaSheetIds.map(String),
+  ])
+  if (!validTargets.has(String(toSheetId))) throw new ApiError(ErrorCode.FORBIDDEN, 'Recipient sheet not in table')
+  if (String(fromSheetId) === String(toSheetId)) throw new ApiError(ErrorCode.BAD_REQUEST, 'Cannot send credits to yourself')
+
+  const amt = Number(amount)
+  if (!Number.isFinite(amt) || amt <= 0) throw new ApiError(ErrorCode.BAD_REQUEST, 'Invalid amount')
+
+  const fromSheet = await sheetsModel.findById(fromSheetId)
+  const toSheet = await sheetsModel.findById(toSheetId)
+  if (!fromSheet || !toSheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
+  if ((fromSheet.shieldCredits ?? 0) < amt) throw new ApiError(ErrorCode.BAD_REQUEST, 'Not enough S.H.I.E.L.D. Credits')
+
+  fromSheet.shieldCredits = (fromSheet.shieldCredits ?? 0) - amt
+  toSheet.shieldCredits = (toSheet.shieldCredits ?? 0) + amt
+  await fromSheet.save()
+  await toSheet.save()
+
+  if (global.io) {
+    global.io.emit('sheet:updated', { sheetId: String(fromSheetId), sheet: fromSheet })
+    global.io.emit('sheet:updated', { sheetId: String(toSheetId), sheet: toSheet })
+  }
+
+  return { fromShieldCredits: fromSheet.shieldCredits, toShieldCredits: toSheet.shieldCredits }
+}
+
 module.exports = {
   getTables, getTable, createTable, deleteTable,
   inviteMember, respondToInvitation, selectSheet,
@@ -748,4 +960,6 @@ module.exports = {
   setCombatRole,
   oaaSheetCombatUpdate,
   watchAnyInitiativeTurn,
+  setMarket, closeMarket, buyFromMarket,
+  grantCredits, transferCredits,
 }

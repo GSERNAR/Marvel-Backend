@@ -23,6 +23,12 @@ const TableSchema = new mongoose.Schema(
     // combatRoles: { [sheetId]: 'Boss' | 'NPC' | 'Minion' } — persisted so any viewer (not just the
     // OAA's own browser) can tell a sheet's current combat role, e.g. to gate boss-form access.
     combatRoles: { type: mongoose.Schema.Types.Mixed, default: {} },
+    // activeMarkets: { shield: Market|null, tinkerer: Market|null, emporium: Market|null, masque: Market|null }
+    // Market = { slots: [{ id, slot, entryType, rarity, category, name, type?, skill?, effect?,
+    //            basePrice, markupPercent?, price, stock }], activatedAt }
+    // Generated client-side by the OAA (see src/pages/my-tables/marketGenerator.js) and stored
+    // here as the shared, authoritative source of stock for every table participant's Buy action.
+    activeMarkets: { type: mongoose.Schema.Types.Mixed, default: {} },
   },
   { timestamps: true, versionKey: false }
 )
