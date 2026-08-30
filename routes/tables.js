@@ -8,7 +8,7 @@ const {
   addOaaSheet, removeOaaSheet,
   requestSheet, approveSheetRequest,
   kickMember, leaveTable,
-  getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
+  getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet, assistSheetForSheet,
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
   publishInitiativeOrder, advanceInitiativeTurn, reverseInitiativeTurn, setInitiativeRollOaa, setSheetInitiativeRoll, clearInitiative,
   setCombatRole,
@@ -25,6 +25,10 @@ router.post('/', authMiddleware, handleError(req => createTable(req.tokenBody.id
 // Must be before /:id to avoid Express matching literal paths as table IDs
 router.get('/for-sheet/:sheetId/absorb-targets', authMiddleware, handleError(req =>
   getAbsorbTargetsForSheet(req.tokenBody.id, req.params.sheetId)
+))
+
+router.post('/for-sheet/:sheetId/assist', authMiddleware, handleError(req =>
+  assistSheetForSheet(req.tokenBody.id, req.params.sheetId, req.body.targetSheetId, req.body)
 ))
 
 // Long-poll: holds the response open until a turn advances or 28 s timeout

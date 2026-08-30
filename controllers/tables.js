@@ -313,7 +313,8 @@ const getAbsorbTargets = async (userId, tableId) => {
 
   // OAA NPC sheets — visible to every table participant
   const oaaEntries = (table.oaaSheetIds || []).map(sid => ({
-    sheetId: String(sid), memberUsername: table.oaaUsername, memberId: table.oaaId, isNpc: true
+    sheetId: String(sid), memberUsername: table.oaaUsername, memberId: table.oaaId, isNpc: true,
+    combatRole: table.combatRoles?.[String(sid)] ?? null,
   }))
 
   const targets = [...memberEntries, ...oaaEntries]
@@ -339,6 +340,7 @@ const getAbsorbTargets = async (userId, tableId) => {
       progressionHpBonus: sheet.progressionHpBonus ?? 0,
       skillRanks: sheet.skillRanks || {},
       unlockedPowerIds: (sheet.unlockedPowerIds ?? []).map(String),
+      combatRole: target.combatRole ?? null,
     })
   }
   return results
@@ -363,6 +365,63 @@ const getAbsorbTargetsForSheet = async (userId, sheetId) => {
 
   if (!table) return []
   return getAbsorbTargets(userId, String(table._id))
+}
+
+// A regular table member (not just the OAA) may HEAL another sheet in the same table — an ally's
+// own sheet, or an OAA NPC that isn't tagged Boss/Minion (per the item catalog's "heal an ally or
+// eligible NPC" items). This is the only cross-sheet WRITE a non-OAA player has; scoped strictly
+// to healing (mirrors oaaSheetCombatUpdate's heal branch) — no damage/status/other fields.
+const assistSheetForSheet = async (userId, callerSheetId, targetSheetId, body) => {
+  // Same table-resolution convenience as getAbsorbTargetsForSheet — no frontend tableId needed.
+  let table = await tablesModel.findOne({
+    $or: [
+      { 'members': { $elemMatch: { sheetId: String(callerSheetId), status: 'accepted' } } },
+      { oaaSheetIds: String(callerSheetId) },
+    ]
+  })
+  if (!table) {
+    table = await tablesModel.findOne({
+      'members': { $elemMatch: { userId: String(userId), status: 'accepted' } }
+    }).sort({ updatedAt: -1 })
+  }
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+
+  const isOaa = String(table.oaaId) === String(userId)
+  const isMember = table.members.some(m => String(m.userId) === String(userId) && m.status === 'accepted')
+  if (!isOaa && !isMember) throw new ApiError(ErrorCode.FORBIDDEN, 'Not a table participant')
+
+  const isMemberSheet = table.members.some(m => m.status === 'accepted' && String(m.sheetId) === String(targetSheetId))
+  const isOaaSheet = (table.oaaSheetIds || []).map(String).includes(String(targetSheetId))
+  if (!isMemberSheet && !isOaaSheet) throw new ApiError(ErrorCode.FORBIDDEN, 'Target not in this table')
+
+  if (isOaaSheet) {
+    const role = table.combatRoles?.[String(targetSheetId)]
+    if (role === 'Boss' || role === 'Minion') throw new ApiError(ErrorCode.FORBIDDEN, 'Cannot assist a Boss or Minion')
+  }
+
+  const sheet = await sheetsModel.findById(targetSheetId)
+  if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
+
+  if (body.heal != null) {
+    // Sane upper bound in case of a broken client — the biggest catalog heal (Asgardian Mead) is 50.
+    const healAmt = Math.max(0, Math.min(200, Number(body.heal) || 0))
+    const currentDeathHp = sheet.deathHp ?? 0
+    if (currentDeathHp > 0) {
+      const deathReduction = Math.min(currentDeathHp, healAmt)
+      sheet.deathHp = currentDeathHp - deathReduction
+      const remaining = healAmt - deathReduction
+      if (remaining > 0) sheet.currentHp = (sheet.currentHp ?? 0) + remaining
+    } else {
+      sheet.currentHp = (sheet.currentHp ?? 0) + healAmt
+    }
+  }
+
+  await sheet.save()
+  if (global.io) {
+    global.io.emit('sheet:updated', { sheetId: String(targetSheetId), sheet })
+    if (body.heal != null) global.io.emit('combat:heal', { sheetId: String(targetSheetId) })
+  }
+  return { currentHp: sheet.currentHp, deathHp: sheet.deathHp ?? 0 }
 }
 
 // ── Initiative ────────────────────────────────────────────────────────────────
@@ -954,7 +1013,7 @@ module.exports = {
   addOaaSheet, removeOaaSheet,
   requestSheet, approveSheetRequest,
   kickMember, leaveTable,
-  getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet,
+  getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet, assistSheetForSheet,
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
   publishInitiativeOrder, advanceInitiativeTurn, reverseInitiativeTurn, setInitiativeRollOaa, setSheetInitiativeRoll, clearInitiative,
   setCombatRole,
