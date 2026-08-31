@@ -50,9 +50,19 @@ const computeIso8StatBonuses = (iso8Array) => {
 // character-specific override the frontend's useSheetStats.js pipeline has (Warstar's split HP
 // table, Sandman's temporary boost, Extremis, Rogue absorption, etc.). Returns null (meaning
 // "don't clamp") rather than guess when the form can't be resolved.
+// Most sheets don't store their own formId — they implicitly use the character's default form
+// (see frontend useSheetStats.js: `sheet.formId ?? character?.defaultForm`). Resolving only
+// sheet.formId meant this returned null (i.e. "don't clamp"/"don't touch") for the common
+// single-form case, silently skipping the heal clamp and PP/ammo calculations below.
+const resolveSheetForm = async (sheet) => {
+  if (sheet?.formId) return findFormById(sheet.formId)
+  if (!sheet?.characterId) return null
+  const character = await findCharacterById(sheet.characterId)
+  return character?.defaultForm ? findFormById(character.defaultForm) : null
+}
+
 const computeApproxMaxHp = async (sheet) => {
-  if (!sheet?.formId) return null
-  const form = await findFormById(sheet.formId)
+  const form = await resolveSheetForm(sheet)
   if (!form) return null
   const baseHp = form.stats?.get?.('hp') ?? 0
   const iso8HpBonus = computeIso8StatBonuses(sheet.iso8 ?? []).hp ?? 0
@@ -62,8 +72,7 @@ const computeApproxMaxHp = async (sheet) => {
 // Same approximation approach as computeApproxMaxHp, for max PP — used to clamp/target the
 // table-wide Short Rest/Long Rest heals (half/full PP).
 const computeApproxMaxPP = async (sheet) => {
-  if (!sheet?.formId) return null
-  const form = await findFormById(sheet.formId)
+  const form = await resolveSheetForm(sheet)
   if (!form) return null
   const basePower = form.stats?.get?.('power') ?? 1
   const iso8PowerBonus = computeIso8StatBonuses(sheet.iso8 ?? []).power ?? 0
@@ -878,7 +887,7 @@ const longRestForTable = async (oaaId, tableId) => {
   const sheetsReset = await applyToAllTableSheets(table, async (sheet) => {
     const [character, form] = await Promise.all([
       sheet.characterId ? findCharacterById(sheet.characterId) : null,
-      sheet.formId ? findFormById(sheet.formId) : null,
+      resolveSheetForm(sheet),
     ])
     const [approxMaxHp, approxMaxPp] = await Promise.all([computeApproxMaxHp(sheet), computeApproxMaxPP(sheet)])
     applyLongRestToSheet(sheet, { approxMaxHp, approxMaxPp, characterName: character?.name, formWeapons: form?.weapons })
