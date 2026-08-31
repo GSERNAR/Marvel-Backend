@@ -518,11 +518,23 @@ const publishInitiativeOrder = async (oaaId, tableId, order) => {
   return { ok: true }
 }
 
-const advanceInitiativeTurn = async (oaaId, tableId) => {
+const advanceInitiativeTurn = async (callerId, tableId) => {
   const table = await tablesModel.findById(tableId)
   if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
-  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
   if (!table.initiative?.order?.length) throw new ApiError(ErrorCode.BAD_REQUEST, 'No published order')
+
+  // The OAA can always advance. A regular member may ALSO advance, but only when it's currently
+  // their own selected sheet's turn — lets a player's own sheet "Next Turn" button drive the
+  // shared table order forward on their own turn, without needing the OAA to click Advance too.
+  const isOaa = String(table.oaaId) === String(callerId)
+  if (!isOaa) {
+    const currentIdx = table.initiative.currentTurnIndex ?? -1
+    const currentSheetId = currentIdx >= 0 ? table.initiative.order[currentIdx]?.sheetId : null
+    const member = table.members.find(m => m.status === 'accepted' && String(m.userId) === String(callerId))
+    if (!member || !currentSheetId || String(member.sheetId) !== String(currentSheetId)) {
+      throw new ApiError(ErrorCode.FORBIDDEN, 'Not your turn')
+    }
+  }
 
   const order = table.initiative.order
   const current = table.initiative.currentTurnIndex ?? -1
