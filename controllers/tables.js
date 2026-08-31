@@ -1,5 +1,6 @@
 const { tablesModel, sheetsModel, usersModel, formsModel, powersModel, charactersModel, ModulesModel } = require('../models')
 const { ApiError, ErrorCode } = require('../common/apiError')
+const { processEffectsForNextTurn, filterEffectsForNextTurn, restoreEffectsForPreviousTurn } = require('../common/combatEffects')
 
 // Ported from frontend src/pages/my-sheets/sheetMechanics.js computeMaxPP()
 const computeMaxPP = (powerStat, level) => {
@@ -402,24 +403,42 @@ const assistSheetForSheet = async (userId, callerSheetId, targetSheetId, body) =
   const sheet = await sheetsModel.findById(targetSheetId)
   if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
 
+  let wasDamage = false
   if (body.heal != null) {
     // Sane upper bound in case of a broken client — the biggest catalog heal (Asgardian Mead) is 50.
-    const healAmt = Math.max(0, Math.min(200, Number(body.heal) || 0))
-    const currentDeathHp = sheet.deathHp ?? 0
-    if (currentDeathHp > 0) {
-      const deathReduction = Math.min(currentDeathHp, healAmt)
-      sheet.deathHp = currentDeathHp - deathReduction
-      const remaining = healAmt - deathReduction
-      if (remaining > 0) sheet.currentHp = (sheet.currentHp ?? 0) + remaining
+    const amt = Math.max(0, Math.min(200, Number(body.heal) || 0))
+    // Putrid ("any healing ability deals damage equal to the healing amount instead of restoring
+    // HP" — STATUS_EFFECTS_DEF in Marvel-Frontend's CombatTab.jsx): checked against the TARGET's
+    // own status, since this heal is being cast ON them.
+    const isPutrid = !!sheet.specialResource?.statusEffects?.putrid?.active
+    wasDamage = isPutrid
+    if (isPutrid) {
+      const hpBefore = sheet.currentHp ?? 0
+      const newHp = Math.max(0, hpBefore - amt)
+      const maxDeathHp = 30 + (sheet.level ?? 1) * 5
+      const rawDeathHp = newHp === 0 && amt > hpBefore ? (sheet.deathHp ?? 0) + (amt - hpBefore) : newHp > 0 ? 0 : (sheet.deathHp ?? 0)
+      sheet.currentHp = newHp
+      sheet.deathHp = Math.min(maxDeathHp, rawDeathHp)
     } else {
-      sheet.currentHp = (sheet.currentHp ?? 0) + healAmt
+      const currentDeathHp = sheet.deathHp ?? 0
+      if (currentDeathHp > 0) {
+        const deathReduction = Math.min(currentDeathHp, amt)
+        sheet.deathHp = currentDeathHp - deathReduction
+        const remaining = amt - deathReduction
+        if (remaining > 0) sheet.currentHp = (sheet.currentHp ?? 0) + remaining
+      } else {
+        sheet.currentHp = (sheet.currentHp ?? 0) + amt
+      }
     }
   }
 
   await sheet.save()
   if (global.io) {
     global.io.emit('sheet:updated', { sheetId: String(targetSheetId), sheet })
-    if (body.heal != null) global.io.emit('combat:heal', { sheetId: String(targetSheetId) })
+    if (body.heal != null) {
+      if (wasDamage) global.io.emit('combat:damage', { sheetId: String(targetSheetId), defeated: sheet.currentHp === 0 })
+      else global.io.emit('combat:heal', { sheetId: String(targetSheetId) })
+    }
   }
   return { currentHp: sheet.currentHp, deathHp: sheet.deathHp ?? 0 }
 }
@@ -512,6 +531,24 @@ const advanceInitiativeTurn = async (oaaId, tableId) => {
   table.markModified('initiative')
   await table.save()
 
+  // The combatant whose turn just ENDED (order[current], before this advance) gets their Active
+  // Effects ticked down exactly like clicking "Next Turn" on their own sheet's Combat tab would —
+  // see common/combatEffects.js (ported from the frontend's sheetMechanics.js).
+  const endingSheetId = current >= 0 ? order[current]?.sheetId : null
+  if (endingSheetId) {
+    const endingSheet = await sheetsModel.findById(endingSheetId)
+    if (endingSheet && (endingSheet.combatEffects ?? []).length) {
+      const { effects: ticked, statBuffs, skillBuffs, healDelta } =
+        processEffectsForNextTurn(endingSheet.combatEffects ?? [], endingSheet.statBuffs ?? {}, endingSheet.skillBuffs ?? {})
+      endingSheet.combatEffects = filterEffectsForNextTurn(ticked)
+      endingSheet.statBuffs = statBuffs
+      endingSheet.skillBuffs = skillBuffs
+      if (healDelta) endingSheet.currentHp = Math.max(0, (endingSheet.currentHp ?? 0) + healDelta)
+      await endingSheet.save()
+      if (global.io) global.io.emit('sheet:updated', { sheetId: String(endingSheetId), sheet: endingSheet })
+    }
+  }
+
   const turnEntry = order[next]
   if (global.io) global.io.emit('initiative:turn', { tableId: String(tableId), currentTurnIndex: next, turnEntry })
 
@@ -544,6 +581,19 @@ const reverseInitiativeTurn = async (oaaId, tableId) => {
   table.initiative.currentTurnIndex = prev
   table.markModified('initiative')
   await table.save()
+
+  // Undo the tick that the advance we're reversing applied to order[prev] (the combatant whose
+  // turn we're un-ending) — restores remaining-turns counts. Partial undo only, see
+  // common/combatEffects.js's restoreEffectsForPreviousTurn doc comment.
+  const returningSheetId = prev >= 0 ? order[prev]?.sheetId : null
+  if (returningSheetId) {
+    const returningSheet = await sheetsModel.findById(returningSheetId)
+    if (returningSheet && (returningSheet.combatEffects ?? []).length) {
+      returningSheet.combatEffects = restoreEffectsForPreviousTurn(returningSheet.combatEffects ?? [])
+      await returningSheet.save()
+      if (global.io) global.io.emit('sheet:updated', { sheetId: String(returningSheetId), sheet: returningSheet })
+    }
+  }
 
   const turnEntry = order[prev]
   if (global.io) global.io.emit('initiative:turn', { tableId: String(tableId), currentTurnIndex: prev, turnEntry })
