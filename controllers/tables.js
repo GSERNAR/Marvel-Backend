@@ -29,6 +29,31 @@ const findCharacterById = async (id) => {
   return characters.find(c => String(c._id) === String(id)) ?? null
 }
 
+// Ported from frontend src/pages/my-sheets/sheetMechanics.js computeIso8StatBonuses()
+const computeIso8StatBonuses = (iso8Array) => {
+  const bonuses = {}
+  for (const iso of (iso8Array ?? [])) {
+    if (!iso || !iso.statBonuses) continue
+    if (iso.combatsRemaining !== undefined && iso.combatsRemaining <= 0) continue
+    for (const { stat, amount } of iso.statBonuses) bonuses[stat] = (bonuses[stat] ?? 0) + amount
+  }
+  return bonuses
+}
+
+// Approximate max HP for clamping a heal so it can't overheal past the target's max — covers the
+// common case (base form HP + level progression + ISO-8) but doesn't replicate every
+// character-specific override the frontend's useSheetStats.js pipeline has (Warstar's split HP
+// table, Sandman's temporary boost, Extremis, Rogue absorption, etc.). Returns null (meaning
+// "don't clamp") rather than guess when the form can't be resolved.
+const computeApproxMaxHp = async (sheet) => {
+  if (!sheet?.formId) return null
+  const form = await findFormById(sheet.formId)
+  if (!form) return null
+  const baseHp = form.stats?.get?.('hp') ?? 0
+  const iso8HpBonus = computeIso8StatBonuses(sheet.iso8 ?? []).hp ?? 0
+  return baseHp + (sheet.progressionHpBonus ?? 0) + iso8HpBonus
+}
+
 // Long-poll watchers: userId (string) → [{ finish, timer, done }, ...]
 // Array so multiple open tabs/windows for the same user all get notified.
 const pendingWatchers = new Map()
@@ -420,14 +445,17 @@ const assistSheetForSheet = async (userId, callerSheetId, targetSheetId, body) =
       sheet.currentHp = newHp
       sheet.deathHp = Math.min(maxDeathHp, rawDeathHp)
     } else {
+      // Never heal past the target's own max HP.
+      const approxMaxHp = await computeApproxMaxHp(sheet)
+      const clamp = (hp) => approxMaxHp != null ? Math.min(approxMaxHp, hp) : hp
       const currentDeathHp = sheet.deathHp ?? 0
       if (currentDeathHp > 0) {
         const deathReduction = Math.min(currentDeathHp, amt)
         sheet.deathHp = currentDeathHp - deathReduction
         const remaining = amt - deathReduction
-        if (remaining > 0) sheet.currentHp = (sheet.currentHp ?? 0) + remaining
+        if (remaining > 0) sheet.currentHp = clamp((sheet.currentHp ?? 0) + remaining)
       } else {
-        sheet.currentHp = (sheet.currentHp ?? 0) + amt
+        sheet.currentHp = clamp((sheet.currentHp ?? 0) + amt)
       }
     }
   }
@@ -555,7 +583,11 @@ const advanceInitiativeTurn = async (callerId, tableId) => {
       endingSheet.combatEffects = filterEffectsForNextTurn(ticked)
       endingSheet.statBuffs = statBuffs
       endingSheet.skillBuffs = skillBuffs
-      if (healDelta) endingSheet.currentHp = Math.max(0, (endingSheet.currentHp ?? 0) + healDelta)
+      if (healDelta) {
+        const newHp = Math.max(0, (endingSheet.currentHp ?? 0) + healDelta)
+        const approxMaxHp = healDelta > 0 ? await computeApproxMaxHp(endingSheet) : null
+        endingSheet.currentHp = approxMaxHp != null ? Math.min(approxMaxHp, newHp) : newHp
+      }
       await endingSheet.save()
       if (global.io) global.io.emit('sheet:updated', { sheetId: String(endingSheetId), sheet: endingSheet })
     }
