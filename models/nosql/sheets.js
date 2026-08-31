@@ -150,6 +150,12 @@ const SheetScheme = new mongoose.Schema(
     // button — see advanceInitiativeTurn/reverseInitiativeTurn in controllers/tables.js.
     combatTurnCount: { type: Number, default: 1 },
 
+    // Spare ammo (spare magazines / pellets) per weapon catalog key — shared across every
+    // equipped instance of that weapon type, not tied to a specific weaponSlots entry. The
+    // currently-LOADED ammo in a given gun still lives on that weapon's own weaponSlots entry
+    // (see InventoryTab.jsx) since that's specific to the physical gun, not the ammo type.
+    ammoInventory: { type: Object, default: {} },
+
     // Inventory
     inventory: { type: Array, default: [] },
     materials: { type: Array, default: [] },
