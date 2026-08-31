@@ -42,6 +42,23 @@ function topUpAmmoOnLongRest(ammoInventory, equippedWeapons) {
   return next
 }
 
+// Ported from frontend sheetMechanics.js RELOAD_CAPACITY/reloadWeaponsOnLongRest — only these 4
+// magazine-fed weapons have per-gun loaded ammo to reload; pellet weapons draw straight from
+// ammoInventory with no separate loaded state.
+const RELOAD_CAPACITY = {
+  PISTOL: 10,
+  SUBMACHINE: 20,
+  ASSAULTRIFLE: 30,
+  MACHINE: 100,
+}
+
+function reloadWeaponsOnLongRest(equippedWeapons) {
+  return (equippedWeapons ?? []).map((w) => {
+    const capacity = RELOAD_CAPACITY[w?.key]
+    return capacity != null ? { ...w, ammo: capacity } : w
+  })
+}
+
 // Ported from frontend sheetMechanics.js getDocOckTentacleMaxHp()
 function getDocOckTentacleMaxHp(level) {
   const l = level ?? 1
@@ -149,6 +166,9 @@ function applyLongRestToSheet(sheet, ctx) {
   sheet.currentPp = approxMaxPp ?? sheet.currentPp
   sheet.deathHp = 0
   sheet.ammoInventory = topUpAmmoOnLongRest(sheet.ammoInventory, equippedWeapons)
+  if (sheet.textFields) {
+    sheet.textFields.weaponSlots = JSON.stringify(reloadWeaponsOnLongRest(equippedWeapons))
+  }
   sheet.webCharges = 20
   sheet.webCartridges = 10
   sheet.toVirus = 0
