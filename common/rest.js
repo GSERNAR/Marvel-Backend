@@ -32,12 +32,13 @@ const LONG_REST_AMMO_DEFAULTS = {
   HUNTINGRIFLE: 10,
 }
 
-function topUpAmmoOnLongRest(ammoInventory, equippedWeapons) {
+function topUpAmmoOnLongRest(ammoInventory, weaponKeys) {
   const next = { ...(ammoInventory ?? {}) }
-  for (const w of (equippedWeapons ?? [])) {
-    const defaultAmt = LONG_REST_AMMO_DEFAULTS[w?.key]
+  for (const rawKey of (weaponKeys ?? [])) {
+    const key = String(rawKey ?? '').toUpperCase()
+    const defaultAmt = LONG_REST_AMMO_DEFAULTS[key]
     if (defaultAmt == null) continue
-    next[w.key] = Math.max(next[w.key] ?? 0, defaultAmt)
+    next[key] = Math.max(next[key] ?? 0, defaultAmt)
   }
   return next
 }
@@ -151,7 +152,7 @@ function applyShortRestToSheet(sheet, ctx) {
 }
 
 function applyLongRestToSheet(sheet, ctx) {
-  const { approxMaxHp, approxMaxPp, characterName } = ctx
+  const { approxMaxHp, approxMaxPp, characterName, formWeapons } = ctx
   const flags = characterFlags(characterName)
   const lvl = sheet.level ?? 1
 
@@ -161,11 +162,19 @@ function applyLongRestToSheet(sheet, ctx) {
   let equippedWeapons = []
   try { equippedWeapons = JSON.parse(sheet.textFields?.weaponSlots || '[]') } catch { equippedWeapons = [] }
 
+  // Every ammo-tracked weapon the character has access to at all — their full Basic Equipment
+  // loadout (formWeapons) unioned with whatever's currently in their weapon slots — gets topped
+  // up, not just what's equipped right now.
+  const ammoRelevantWeaponKeys = [
+    ...(formWeapons ?? []),
+    ...equippedWeapons.map((w) => w?.key),
+  ]
+
   sheet.combatTurnCount = 1
   sheet.currentHp = approxMaxHp ?? sheet.currentHp
   sheet.currentPp = approxMaxPp ?? sheet.currentPp
   sheet.deathHp = 0
-  sheet.ammoInventory = topUpAmmoOnLongRest(sheet.ammoInventory, equippedWeapons)
+  sheet.ammoInventory = topUpAmmoOnLongRest(sheet.ammoInventory, ammoRelevantWeaponKeys)
   if (sheet.textFields) {
     sheet.textFields.weaponSlots = JSON.stringify(reloadWeaponsOnLongRest(equippedWeapons))
   }

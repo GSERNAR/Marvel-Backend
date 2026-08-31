@@ -876,9 +876,12 @@ const longRestForTable = async (oaaId, tableId) => {
   if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
 
   const sheetsReset = await applyToAllTableSheets(table, async (sheet) => {
-    const character = sheet.characterId ? await findCharacterById(sheet.characterId) : null
+    const [character, form] = await Promise.all([
+      sheet.characterId ? findCharacterById(sheet.characterId) : null,
+      sheet.formId ? findFormById(sheet.formId) : null,
+    ])
     const [approxMaxHp, approxMaxPp] = await Promise.all([computeApproxMaxHp(sheet), computeApproxMaxPP(sheet)])
-    applyLongRestToSheet(sheet, { approxMaxHp, approxMaxPp, characterName: character?.name })
+    applyLongRestToSheet(sheet, { approxMaxHp, approxMaxPp, characterName: character?.name, formWeapons: form?.weapons })
   })
 
   return { ok: true, sheetsReset }
