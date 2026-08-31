@@ -890,7 +890,12 @@ const longRestForTable = async (oaaId, tableId) => {
       resolveSheetForm(sheet),
     ])
     const [approxMaxHp, approxMaxPp] = await Promise.all([computeApproxMaxHp(sheet), computeApproxMaxPP(sheet)])
-    applyLongRestToSheet(sheet, { approxMaxHp, approxMaxPp, characterName: character?.name, formWeapons: form?.weapons })
+    // `weapons` isn't declared in FormScheme (models/nosql/forms.js), so Mongoose never installs
+    // a path getter for it — plain `form.weapons` is always undefined on a hydrated document even
+    // though the data survives reads. Reach into the raw hydrated doc instead, same as how
+    // controllers/forms.js's formView() surfaces it via toObject() for the GET /forms route.
+    const formWeapons = form?._doc?.weapons ?? form?.toObject?.()?.weapons
+    applyLongRestToSheet(sheet, { approxMaxHp, approxMaxPp, characterName: character?.name, formWeapons })
   })
 
   return { ok: true, sheetsReset }
