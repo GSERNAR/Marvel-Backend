@@ -17,6 +17,31 @@
 const { processEffectsForRest, filterEffectsForShortRest, filterEffectsForLongRest } = require('./combatEffects')
 const { clearStatusForShortRest, clearStatusForLongRest } = require('./statusEffects')
 
+// Ported from frontend sheetMechanics.js LONG_REST_AMMO_DEFAULTS/topUpAmmoOnLongRest — a weapon
+// catalog key found among the character's equipped weapons (sheet.textFields.weaponSlots) gets
+// its shared ammoInventory count topped up to at least this value (never reduced). Keep in sync
+// with the frontend if these numbers change.
+const LONG_REST_AMMO_DEFAULTS = {
+  PISTOL: 3,
+  SUBMACHINE: 3,
+  MACHINE: 1,
+  ASSAULTRIFLE: 2,
+  SHOTGUN: 10,
+  SNIPER: 8,
+  SAWEDSHOTGUN: 6,
+  HUNTINGRIFLE: 10,
+}
+
+function topUpAmmoOnLongRest(ammoInventory, equippedWeapons) {
+  const next = { ...(ammoInventory ?? {}) }
+  for (const w of (equippedWeapons ?? [])) {
+    const defaultAmt = LONG_REST_AMMO_DEFAULTS[w?.key]
+    if (defaultAmt == null) continue
+    next[w.key] = Math.max(next[w.key] ?? 0, defaultAmt)
+  }
+  return next
+}
+
 // Ported from frontend sheetMechanics.js getDocOckTentacleMaxHp()
 function getDocOckTentacleMaxHp(level) {
   const l = level ?? 1
@@ -116,10 +141,14 @@ function applyLongRestToSheet(sheet, ctx) {
   const { effects: keptEffects, statBuffs, skillBuffs } =
     processEffectsForRest(sheet.combatEffects ?? [], sheet.statBuffs ?? {}, sheet.skillBuffs ?? {}, filterEffectsForLongRest)
 
+  let equippedWeapons = []
+  try { equippedWeapons = JSON.parse(sheet.textFields?.weaponSlots || '[]') } catch { equippedWeapons = [] }
+
   sheet.combatTurnCount = 1
   sheet.currentHp = approxMaxHp ?? sheet.currentHp
   sheet.currentPp = approxMaxPp ?? sheet.currentPp
   sheet.deathHp = 0
+  sheet.ammoInventory = topUpAmmoOnLongRest(sheet.ammoInventory, equippedWeapons)
   sheet.webCharges = 20
   sheet.webCartridges = 10
   sheet.toVirus = 0
