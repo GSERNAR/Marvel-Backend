@@ -1,6 +1,11 @@
 const { tablesModel, sheetsModel, usersModel, formsModel, powersModel, charactersModel, ModulesModel } = require('../models')
 const { ApiError, ErrorCode } = require('../common/apiError')
-const { processEffectsForNextTurn, filterEffectsForNextTurn, restoreEffectsForPreviousTurn } = require('../common/combatEffects')
+const {
+  processEffectsForNextTurn, filterEffectsForNextTurn, restoreEffectsForPreviousTurn,
+  filterEffectsForEndFight, processEffectsForRest,
+} = require('../common/combatEffects')
+const { clearStatusForEndFight } = require('../common/statusEffects')
+const { applyShortRestToSheet, applyLongRestToSheet } = require('../common/rest')
 
 // Ported from frontend src/pages/my-sheets/sheetMechanics.js computeMaxPP()
 const computeMaxPP = (powerStat, level) => {
@@ -52,6 +57,63 @@ const computeApproxMaxHp = async (sheet) => {
   const baseHp = form.stats?.get?.('hp') ?? 0
   const iso8HpBonus = computeIso8StatBonuses(sheet.iso8 ?? []).hp ?? 0
   return baseHp + (sheet.progressionHpBonus ?? 0) + iso8HpBonus
+}
+
+// Same approximation approach as computeApproxMaxHp, for max PP — used to clamp/target the
+// table-wide Short Rest/Long Rest heals (half/full PP).
+const computeApproxMaxPP = async (sheet) => {
+  if (!sheet?.formId) return null
+  const form = await findFormById(sheet.formId)
+  if (!form) return null
+  const basePower = form.stats?.get?.('power') ?? 1
+  const iso8PowerBonus = computeIso8StatBonuses(sheet.iso8 ?? []).power ?? 0
+  const statBuffPower = sheet.statBuffs?.power ?? 0
+  return computeMaxPP(basePower + iso8PowerBonus + statBuffPower, sheet.level ?? 1)
+}
+
+// Ported from frontend src/pages/my-sheets/CombatTab.jsx's handleEndFight — mutates `sheet` (not
+// saved here) with the exact same reset. Every value it touches lives on the sheet's own document
+// already, so this is fully generic: no character/form lookups needed, and the handful of
+// character-gated fields in the frontend version (magnetoBarriers, docOckRising) are just
+// harmlessly included for every sheet since they sit unused on characters who don't have them.
+function applyEndFightToSheet(sheet) {
+  const { effects: keptEffects, statBuffs, skillBuffs } =
+    processEffectsForRest(sheet.combatEffects ?? [], sheet.statBuffs ?? {}, sheet.skillBuffs ?? {}, filterEffectsForEndFight)
+
+  const updatedIso8 = (sheet.iso8 ?? []).map((iso) => {
+    if (!iso || iso.combatsRemaining === undefined) return iso
+    return { ...iso, combatsRemaining: Math.max(0, iso.combatsRemaining - 1) }
+  })
+
+  const level = sheet.level ?? 1
+  const angelEndHoly = sheet.isArchangel ? (level >= 20 ? 2 : 0) : (sheet.holyPoints ?? 0)
+
+  sheet.combatTurnCount = 1
+  sheet.combatEffects = keptEffects
+  sheet.statBuffs = statBuffs
+  sheet.skillBuffs = skillBuffs
+  sheet.specialResource = {
+    ...(sheet.specialResource ?? {}),
+    statusEffects: clearStatusForEndFight(sheet.specialResource?.statusEffects),
+    magnetoBarriers: [],
+  }
+  sheet.iso8 = updatedIso8
+  sheet.isInRage = false
+  sheet.rampageCheckDifficulty = 3
+  sheet.isInFury = false
+  sheet.furyTurnsRemaining = 0
+  sheet.asgardianEnergy = level >= 20 ? 4 : level >= 10 ? 3 : 2
+  sheet.isWarriorsMadness = false
+  sheet.isBerserkersRage = false
+  sheet.wisdomFailCount = 0
+  sheet.holyPoints = angelEndHoly
+  sheet.isArchangel = false
+  sheet.archangelTurnsRemaining = 0
+  sheet.bladeSerumUsesThisCombat = 0
+  sheet.bishopBoosterTurnsRemaining = 0
+  sheet.bishopBoosterBonuses = {}
+  sheet.shawKineticCapReduction = 0
+  sheet.docOckRising = false
 }
 
 // Long-poll watchers: userId (string) → [{ finish, timer, done }, ...]
@@ -731,6 +793,109 @@ const clearInitiative = async (oaaId, tableId) => {
   return { ok: true }
 }
 
+// Every accepted member's own sheet plus every OAA-controlled NPC sheet (Bosses, Minions,
+// Players, everything) — the full set a table-wide combat action applies to.
+function getAllTableSheetIds(table) {
+  return new Set([
+    ...table.members.filter(m => m.status === 'accepted' && m.sheetId).map(m => String(m.sheetId)),
+    ...(table.oaaSheetIds ?? []).map(String),
+  ])
+}
+
+// Runs `applySheetFn(sheet)` (sync or async) over every sheet in the table, saving and
+// broadcasting each one — the shared shape behind End Fight/Short Rest/Long Rest/Reset Turns.
+async function applyToAllTableSheets(table, applySheetFn) {
+  const sheetIds = getAllTableSheetIds(table)
+  for (const sheetId of sheetIds) {
+    const sheet = await sheetsModel.findById(sheetId)
+    if (!sheet) continue
+    await applySheetFn(sheet)
+    await sheet.save()
+    if (global.io) global.io.emit('sheet:updated', { sheetId: String(sheetId), sheet })
+  }
+  return sheetIds.size
+}
+
+// OAA-only: ends combat for EVERY sheet in the table — every accepted member's own sheet plus
+// every OAA-controlled NPC sheet (Bosses, Minions, everything) — applying the exact same reset
+// each sheet's own local End Fight button would (see applyEndFightToSheet). Also clears the
+// table's initiative order, since an active initiative is what gates each sheet's own local End
+// Fight button in the first place — this is what un-gates it again.
+const endFightForTable = async (oaaId, tableId) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+
+  const sheetsReset = await applyToAllTableSheets(table, (sheet) => applyEndFightToSheet(sheet))
+
+  table.initiative = null
+  table.markModified('initiative')
+  await table.save()
+
+  // Reuses the initiative:turn channel purely to trigger every connected client's existing
+  // load()-on-turn-event fallback, which re-fetches /tables and picks up initiative: null —
+  // no separate "table cleared" event type needed.
+  if (global.io) global.io.emit('initiative:turn', { tableId: String(tableId), currentTurnIndex: null, turnEntry: null })
+  turnEventSeq += 1
+  const notifyPayload = { tableId: String(tableId), currentTurnIndex: null, turnEntry: null, seq: turnEventSeq }
+  const notifyIds = new Set([String(table.oaaId)])
+  for (const m of (table.members ?? [])) {
+    if (m.status === 'accepted' && m.userId) notifyIds.add(String(m.userId))
+  }
+  for (const uid of notifyIds) {
+    lastEventForUser.set(uid, { seq: turnEventSeq, payload: notifyPayload })
+    const list = pendingWatchers.get(uid) ?? []
+    pendingWatchers.set(uid, [])
+    list.forEach(w => w.finish(notifyPayload))
+  }
+
+  return { ok: true, sheetsReset }
+}
+
+// OAA-only: applies a Short Rest to every sheet in the table (see applyShortRestToSheet) — same
+// heal-target approximation caveats as computeApproxMaxHp/computeApproxMaxPP, and Nico/Hawkeye's
+// interactive rest choices are skipped (same as their own "Skip" flow).
+const shortRestForTable = async (oaaId, tableId) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+
+  const sheetsReset = await applyToAllTableSheets(table, async (sheet) => {
+    const character = sheet.characterId ? await findCharacterById(sheet.characterId) : null
+    const [approxMaxHp, approxMaxPp] = await Promise.all([computeApproxMaxHp(sheet), computeApproxMaxPP(sheet)])
+    applyShortRestToSheet(sheet, { approxMaxHp, approxMaxPp, characterName: character?.name })
+  })
+
+  return { ok: true, sheetsReset }
+}
+
+// OAA-only: applies a Long Rest to every sheet in the table (see applyLongRestToSheet) — same caveats.
+const longRestForTable = async (oaaId, tableId) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+
+  const sheetsReset = await applyToAllTableSheets(table, async (sheet) => {
+    const character = sheet.characterId ? await findCharacterById(sheet.characterId) : null
+    const [approxMaxHp, approxMaxPp] = await Promise.all([computeApproxMaxHp(sheet), computeApproxMaxPP(sheet)])
+    applyLongRestToSheet(sheet, { approxMaxHp, approxMaxPp, characterName: character?.name })
+  })
+
+  return { ok: true, sheetsReset }
+}
+
+// OAA-only: sets every sheet in the table back to turn 1 — just the turn counter, nothing else
+// (no effects/status/HP/PP touched), unlike End Fight/rests.
+const resetTurnsForTable = async (oaaId, tableId) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+  if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
+
+  const sheetsReset = await applyToAllTableSheets(table, (sheet) => { sheet.combatTurnCount = 1 })
+
+  return { ok: true, sheetsReset }
+}
+
 // Persists a combat role ('Boss' | 'NPC' | 'Minion' | falsy-to-clear) for a sheet within this
 // table, so any viewer (not just the OAA's own browser) can tell a sheet's current role — used
 // e.g. to gate a character's boss-only forms to sheets currently tagged Boss.
@@ -1118,6 +1283,7 @@ module.exports = {
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet, assistSheetForSheet,
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
   publishInitiativeOrder, advanceInitiativeTurn, reverseInitiativeTurn, setInitiativeRollOaa, setSheetInitiativeRoll, clearInitiative,
+  endFightForTable, shortRestForTable, longRestForTable, resetTurnsForTable,
   setCombatRole,
   oaaSheetCombatUpdate,
   watchAnyInitiativeTurn,

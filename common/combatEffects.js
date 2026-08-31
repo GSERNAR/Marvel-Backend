@@ -52,4 +52,38 @@ function restoreEffectsForPreviousTurn(effects) {
   return effects.map((e) => e.kind === 'turns' ? { ...e, count: e.count + 1 } : e)
 }
 
-module.exports = { applyBuffDelta, processEffectsForNextTurn, filterEffectsForNextTurn, restoreEffectsForPreviousTurn }
+function filterEffectsForEndFight(effects) {
+  return effects.filter((e) => e.kind === 'shortRest' || e.kind === 'longRest' || e.kind === 'permanent')
+}
+function filterEffectsForShortRest(effects) {
+  return effects.filter((e) => e.kind === 'longRest' || e.kind === 'permanent')
+}
+function filterEffectsForLongRest(effects) {
+  return effects.filter((e) => e.kind === 'permanent')
+}
+
+function reverseEffectDeltas(effects, statBuffs, skillBuffs) {
+  let sb = statBuffs, kb = skillBuffs
+  for (const e of effects) {
+    const reversed = applyBuffDelta(sb, kb, e.delta, -1)
+    sb = reversed.statBuffs
+    kb = reversed.skillBuffs
+  }
+  return { statBuffs: sb, skillBuffs: kb }
+}
+
+// Wraps filterEffectsForEndFight (or any other filterFn with the same shape): reverses the
+// deltas of whatever gets dropped, keeps the deltas of whatever survives.
+function processEffectsForRest(effects, statBuffs, skillBuffs, filterFn) {
+  const survivors = filterFn(effects)
+  const survivorIds = new Set(survivors.map((e) => e.id))
+  const dropped = effects.filter((e) => !survivorIds.has(e.id))
+  const { statBuffs: sb, skillBuffs: kb } = reverseEffectDeltas(dropped, statBuffs, skillBuffs)
+  return { effects: survivors, statBuffs: sb, skillBuffs: kb }
+}
+
+module.exports = {
+  applyBuffDelta, processEffectsForNextTurn, filterEffectsForNextTurn, restoreEffectsForPreviousTurn,
+  filterEffectsForEndFight, filterEffectsForShortRest, filterEffectsForLongRest,
+  reverseEffectDeltas, processEffectsForRest,
+}

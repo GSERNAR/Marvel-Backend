@@ -11,6 +11,7 @@ const {
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet, assistSheetForSheet,
   requestInitiative, submitInitiativeRoll, startInitiativeTiebreaker,
   publishInitiativeOrder, advanceInitiativeTurn, reverseInitiativeTurn, setInitiativeRollOaa, setSheetInitiativeRoll, clearInitiative,
+  endFightForTable, shortRestForTable, longRestForTable, resetTurnsForTable,
   setCombatRole,
   oaaSheetCombatUpdate,
   watchAnyInitiativeTurn,
@@ -121,6 +122,22 @@ router.post('/:id/initiative/sheet-roll', authMiddleware, handleError(req =>
 
 router.post('/:id/initiative/clear', authMiddleware, handleError(req =>
   clearInitiative(req.tokenBody.id, req.params.id)
+))
+
+router.post('/:id/end-fight', authMiddleware, handleError(req =>
+  endFightForTable(req.tokenBody.id, req.params.id)
+))
+
+router.post('/:id/short-rest', authMiddleware, handleError(req =>
+  shortRestForTable(req.tokenBody.id, req.params.id)
+))
+
+router.post('/:id/long-rest', authMiddleware, handleError(req =>
+  longRestForTable(req.tokenBody.id, req.params.id)
+))
+
+router.post('/:id/reset-turns', authMiddleware, handleError(req =>
+  resetTurnsForTable(req.tokenBody.id, req.params.id)
 ))
 
 router.patch('/:id/sheets/:sheetId/combat', authMiddleware, handleError(req =>
