@@ -1199,6 +1199,12 @@ const buyFromMarket = async (userId, tableId, marketKey, slotId, buyerSheetId) =
       sheet.textFields.consumableSlots = JSON.stringify(consumableSlots)
     }
     sheet.markModified('textFields')
+  } else if (slot.entryType === 'ammo') {
+    // Ported from Marvel-Frontend/src/pages/my-tables/marketGenerator.js's buildAmmoSlot — grants
+    // the rolled quantity of spare magazines/pellets straight into the shared ammoInventory,
+    // same field the sheet's own Ammo Inventory panel (InventoryTab.jsx) and Long Rest top-up read/write.
+    const key = slot.weaponKey
+    sheet.ammoInventory = { ...(sheet.ammoInventory ?? {}), [key]: (sheet.ammoInventory?.[key] ?? 0) + (Number(slot.quantity) || 0) }
   } else {
     const materials = [...(sheet.materials ?? [])]
     const existing = materials.find(m => normalizeMaterialName(m.name) === normalizeMaterialName(slot.name) && m.category === slot.category)
