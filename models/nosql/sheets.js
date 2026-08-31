@@ -145,6 +145,10 @@ const SheetScheme = new mongoose.Schema(
     // Combat
     combatEffects: { type: Array, default: [] },
     specialResource: { type: Object, default: {} },
+    // Persisted (not just local React state) so it advances/reverses correctly when the OAA
+    // drives it via the table's shared initiative order, not only via this sheet's own Next Turn
+    // button — see advanceInitiativeTurn/reverseInitiativeTurn in controllers/tables.js.
+    combatTurnCount: { type: Number, default: 1 },
 
     // Inventory
     inventory: { type: Array, default: [] },

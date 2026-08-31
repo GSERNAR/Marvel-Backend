@@ -573,20 +573,24 @@ const advanceInitiativeTurn = async (callerId, tableId) => {
 
   // The combatant whose turn just ENDED (order[current], before this advance) gets their Active
   // Effects ticked down exactly like clicking "Next Turn" on their own sheet's Combat tab would —
-  // see common/combatEffects.js (ported from the frontend's sheetMechanics.js).
+  // see common/combatEffects.js (ported from the frontend's sheetMechanics.js) — and their own
+  // turn counter (sheet.combatTurnCount) advances too, even if they have no active effects.
   const endingSheetId = current >= 0 ? order[current]?.sheetId : null
   if (endingSheetId) {
     const endingSheet = await sheetsModel.findById(endingSheetId)
-    if (endingSheet && (endingSheet.combatEffects ?? []).length) {
-      const { effects: ticked, statBuffs, skillBuffs, healDelta } =
-        processEffectsForNextTurn(endingSheet.combatEffects ?? [], endingSheet.statBuffs ?? {}, endingSheet.skillBuffs ?? {})
-      endingSheet.combatEffects = filterEffectsForNextTurn(ticked)
-      endingSheet.statBuffs = statBuffs
-      endingSheet.skillBuffs = skillBuffs
-      if (healDelta) {
-        const newHp = Math.max(0, (endingSheet.currentHp ?? 0) + healDelta)
-        const approxMaxHp = healDelta > 0 ? await computeApproxMaxHp(endingSheet) : null
-        endingSheet.currentHp = approxMaxHp != null ? Math.min(approxMaxHp, newHp) : newHp
+    if (endingSheet) {
+      endingSheet.combatTurnCount = (endingSheet.combatTurnCount ?? 1) + 1
+      if ((endingSheet.combatEffects ?? []).length) {
+        const { effects: ticked, statBuffs, skillBuffs, healDelta } =
+          processEffectsForNextTurn(endingSheet.combatEffects ?? [], endingSheet.statBuffs ?? {}, endingSheet.skillBuffs ?? {})
+        endingSheet.combatEffects = filterEffectsForNextTurn(ticked)
+        endingSheet.statBuffs = statBuffs
+        endingSheet.skillBuffs = skillBuffs
+        if (healDelta) {
+          const newHp = Math.max(0, (endingSheet.currentHp ?? 0) + healDelta)
+          const approxMaxHp = healDelta > 0 ? await computeApproxMaxHp(endingSheet) : null
+          endingSheet.currentHp = approxMaxHp != null ? Math.min(approxMaxHp, newHp) : newHp
+        }
       }
       await endingSheet.save()
       if (global.io) global.io.emit('sheet:updated', { sheetId: String(endingSheetId), sheet: endingSheet })
@@ -627,13 +631,17 @@ const reverseInitiativeTurn = async (oaaId, tableId) => {
   await table.save()
 
   // Undo the tick that the advance we're reversing applied to order[prev] (the combatant whose
-  // turn we're un-ending) — restores remaining-turns counts. Partial undo only, see
-  // common/combatEffects.js's restoreEffectsForPreviousTurn doc comment.
+  // turn we're un-ending) — restores remaining-turns counts (partial undo only, see
+  // common/combatEffects.js's restoreEffectsForPreviousTurn doc comment) and their own turn
+  // counter, even if they have no active effects.
   const returningSheetId = prev >= 0 ? order[prev]?.sheetId : null
   if (returningSheetId) {
     const returningSheet = await sheetsModel.findById(returningSheetId)
-    if (returningSheet && (returningSheet.combatEffects ?? []).length) {
-      returningSheet.combatEffects = restoreEffectsForPreviousTurn(returningSheet.combatEffects ?? [])
+    if (returningSheet) {
+      returningSheet.combatTurnCount = Math.max(1, (returningSheet.combatTurnCount ?? 1) - 1)
+      if ((returningSheet.combatEffects ?? []).length) {
+        returningSheet.combatEffects = restoreEffectsForPreviousTurn(returningSheet.combatEffects ?? [])
+      }
       await returningSheet.save()
       if (global.io) global.io.emit('sheet:updated', { sheetId: String(returningSheetId), sheet: returningSheet })
     }
