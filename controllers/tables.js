@@ -185,13 +185,16 @@ const getTable = async (userId, tableId) => {
   const memberEntry = table.members.find(m => String(m.userId) === String(userId))
   if (!isOaa && !memberEntry) throw new ApiError(ErrorCode.FORBIDDEN, 'Not a table participant')
 
-  // Fetch portrait info for accepted members with sheets
-  const sheetIds = table.members.filter(m => m.status === 'accepted' && m.sheetId).map(m => m.sheetId)
+  // Fetch portrait info for accepted members with sheets (primary sheet + any companion sheets)
+  const primarySheetIds = table.members.filter(m => m.status === 'accepted' && m.sheetId).map(m => m.sheetId)
+  const companionSheetIds = table.members.flatMap(m => m.status === 'accepted' ? (m.companionSheetIds || []) : [])
+  const sheetIds = [...primarySheetIds, ...companionSheetIds]
   const portraits = await sheetsModel.find(
     { _id: { $in: sheetIds } },
     'displayName characterName level characterId formId formName'
   )
   const portraitMap = Object.fromEntries(portraits.map(s => [String(s._id), {
+    sheetId: String(s._id),
     displayName: s.displayName,
     characterName: s.characterName,
     level: s.level,
@@ -206,7 +209,9 @@ const getTable = async (userId, tableId) => {
     status: m.status,
     sheetId: m.sheetId,
     pendingSheets: m.pendingSheets || [],
+    companionSheetIds: m.companionSheetIds || [],
     portrait: m.sheetId ? (portraitMap[String(m.sheetId)] ?? null) : null,
+    companionPortraits: (m.companionSheetIds || []).map(sid => portraitMap[String(sid)]).filter(Boolean),
   }))
 
   return {
@@ -310,6 +315,28 @@ const removeOaaSheet = async (oaaId, tableId, sheetId) => {
   return { oaaSheetIds: table.oaaSheetIds }
 }
 
+// Auto-attach for a player's own summoned companion sheet — unlike requestSheet/approveSheetRequest
+// (a manual, OAA-approved swap of the member's primary sheet), this needs no approval since the
+// player already paid the summon cost on their own sheet; it just makes the companion visible at
+// the table alongside them.
+const addCompanionSheet = async (userId, tableId, sheetId) => {
+  const table = await tablesModel.findById(tableId)
+  if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
+
+  const member = table.members.find(m => String(m.userId) === String(userId) && m.status === 'accepted')
+  if (!member) throw new ApiError(ErrorCode.FORBIDDEN, 'Not an accepted member')
+
+  const sheet = await sheetsModel.findOne({ _id: sheetId, userId })
+  if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
+
+  if (!member.companionSheetIds) member.companionSheetIds = []
+  if (!member.companionSheetIds.map(String).includes(String(sheetId))) {
+    member.companionSheetIds.push(String(sheetId))
+    await table.save()
+  }
+  return { companionSheetIds: member.companionSheetIds }
+}
+
 const requestSheet = async (userId, tableId, sheetId) => {
   const table = await tablesModel.findById(tableId)
   if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
@@ -379,9 +406,10 @@ const getTableSheet = async (userId, tableId, sheetId) => {
   const isMember = table.members.some(m => String(m.userId) === String(userId) && m.status === 'accepted')
   if (!isOaa && !isMember) throw new ApiError(ErrorCode.FORBIDDEN, 'Not a table participant')
 
-  // All participants can see accepted member sheets and OAA NPC sheets
+  // All participants can see accepted member sheets, their companion sheets, and OAA NPC sheets
   const validIds = new Set([
     ...table.members.filter(m => m.sheetId).map(m => String(m.sheetId)),
+    ...table.members.flatMap(m => (m.companionSheetIds || []).map(String)),
     ...table.oaaSheetIds.map(String),
   ])
   // OAA can also access pending sheets under review
@@ -1311,7 +1339,7 @@ const transferCredits = async (userId, tableId, fromSheetId, toSheetId, amount) 
 module.exports = {
   getTables, getTable, createTable, deleteTable,
   inviteMember, respondToInvitation, selectSheet,
-  addOaaSheet, removeOaaSheet,
+  addOaaSheet, removeOaaSheet, addCompanionSheet,
   requestSheet, approveSheetRequest,
   kickMember, leaveTable,
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet, assistSheetForSheet,

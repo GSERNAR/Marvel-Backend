@@ -1,4 +1,4 @@
-const { sheetsModel } = require('../models')
+const { sheetsModel, tablesModel } = require('../models')
 const { ApiError, ErrorCode } = require('../common/apiError')
 
 const getSheets = async (userId) => {
@@ -50,6 +50,12 @@ const updateSheet = async (userId, sheetId, body) => {
 const deleteSheet = async (userId, sheetId) => {
   const sheet = await sheetsModel.findOneAndDelete({ _id: sheetId, userId })
   if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
+  // Companion sheets can be auto-attached to a table (see addCompanionSheet in
+  // controllers/tables.js) — deleting one must also detach it so it stops showing up there.
+  await tablesModel.updateMany(
+    { 'members.companionSheetIds': String(sheetId) },
+    { $pull: { 'members.$[].companionSheetIds': String(sheetId) } }
+  )
   return {}
 }
 

@@ -11,6 +11,10 @@ const SheetScheme = new mongoose.Schema(
     formName: { type: String, default: '' },
     displayName: { type: String, required: true },
 
+    // Set when this sheet is a summoned/chosen companion of another sheet — the companion
+    // system creates a real Sheet document per instance instead of an embedded mini-sheet.
+    parentSheetId: { type: String, default: null },
+
     // Progression
     level: { type: Number, default: 1 },
     unspentSkillPoints: { type: Number, default: 10 },
@@ -63,8 +67,8 @@ const SheetScheme = new mongoose.Schema(
     isBerserkersRage: { type: Boolean, default: false },
     wisdomFailCount:  { type: Number,  default: 0 },
 
-    // Companion mini-sheets: { [compCharId]: [{ hp, pp }, ...] }
-    // Always-present companions have 1 element; summoned companions grow 0→N
+    // Legacy embedded companion mini-sheets: { [compCharId]: [{ hp, pp }, ...] }. Superseded by
+    // real linked Sheet documents (see parentSheetId above) — kept only so old data round-trips.
     companionInstances: { type: Object, default: {} },
 
     // Pickable companions chosen via progression (e.g. Ant-Man's giant ants)

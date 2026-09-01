@@ -5,7 +5,7 @@ const { authMiddleware } = require('../common/authMiddleware')
 const {
   getTables, getTable, createTable, deleteTable,
   inviteMember, respondToInvitation, selectSheet,
-  addOaaSheet, removeOaaSheet,
+  addOaaSheet, removeOaaSheet, addCompanionSheet,
   requestSheet, approveSheetRequest,
   kickMember, leaveTable,
   getTableSheet, getAbsorbTargets, getAbsorbTargetsForSheet, assistSheetForSheet,
@@ -60,6 +60,10 @@ router.post('/:id/oaa-sheets', authMiddleware, handleError(req =>
 
 router.delete('/:id/oaa-sheets/:sheetId', authMiddleware, handleError(req =>
   removeOaaSheet(req.tokenBody.id, req.params.id, req.params.sheetId)
+))
+
+router.post('/:id/companion-sheets', authMiddleware, handleError(req =>
+  addCompanionSheet(req.tokenBody.id, req.params.id, req.body.sheetId)
 ))
 
 router.post('/:id/request-sheet', authMiddleware, handleError(req =>

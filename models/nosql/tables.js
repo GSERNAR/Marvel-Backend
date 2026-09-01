@@ -15,6 +15,9 @@ const TableSchema = new mongoose.Schema(
         status: { type: String, enum: ['pending', 'accepted', 'declined'], default: 'pending' },
         sheetId: { type: String, default: null },
         pendingSheets: [{ sheetId: String, sheetName: String }],
+        // Companion sheets the player summoned for their own primary sheet — auto-attached, no
+        // OAA approval needed (unlike pendingSheets, which swaps the member's primary sheet).
+        companionSheetIds: [{ type: String }],
       },
     ],
     // initiative: { status, rolls: { [userId]: { username, characterName, total, isSpeedster } },
