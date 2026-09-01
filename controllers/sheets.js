@@ -78,6 +78,14 @@ const detachSheetFromTables = async (sheetId) => {
 // fully detaches it from every table. "Always present" companions (no maxInstancesByLevel, e.g.
 // Lockheed) are left alone by this — false is returned and the sheet is untouched, so it behaves
 // like any normal character sheet. Shared by both death-detection points below.
+//
+// Deliberately does NOT touch the parent's chosenCompIds — for a summon-gated companion (this
+// function only ever runs when isSummoned is true, see the guard below), "Choose"/chosenCompIds
+// marks the companion *type* as unlocked and is entirely decoupled from any one instance's
+// lifetime (e.g. Ant-Man's ants: "Choose 2 ants to unlock" is a one-time pick, separate from
+// "Summon" which can be repeated many times as instances die). Pulling chosenCompIds here used to
+// make the Choose button for that type reappear the instant any single instance died — wrong,
+// since the type stays unlocked and future instances should only ever need Summon.
 const dismissSummonedCompanionIfDead = async (sheet) => {
   if (!sheet.parentSheetId) return false
   // forms can have non-ObjectId legacy _ids that break findById's auto-cast — fetch-all + string
@@ -87,7 +95,6 @@ const dismissSummonedCompanionIfDead = async (sheet) => {
   if ((form?.maxInstancesByLevel ?? []).length === 0) return false
   await sheetsModel.deleteOne({ _id: sheet._id })
   await detachSheetFromTables(sheet._id)
-  await sheetsModel.updateOne({ _id: sheet.parentSheetId }, { $pull: { chosenCompIds: String(sheet.characterId) } })
   if (global.io) {
     global.io.emit('combat:kill', { sheetId: String(sheet._id) })
     // Distinct from combat:kill (which also fires for a normal, still-very-much-existing "Dead"
@@ -151,18 +158,28 @@ const deleteSheet = async (userId, sheetId) => {
   await detachSheetFromTables(sheetId)
   if (global.io) global.io.emit('sheet:deleted', { sheetId: String(sheetId) })
 
-  // If this was a companion sheet, un-mark it as chosen on the parent — otherwise a deleted
-  // pickable companion (chosenCompIds still holding its id) gets silently auto-recreated the
-  // next time the parent's Companions tab renders (CompanionsTab.jsx auto-creates a sheet for
-  // any already-chosen pickable companion that doesn't have one). This makes delete = a real
-  // dismiss for every entry point (the tab's own Dismiss button, or the generic My Sheets delete).
+  // If this was a companion sheet, un-mark it as chosen on the parent — but only for the true 1:1
+  // "always-present pickable" case (no maxInstancesByLevel — Choose creates the one sheet
+  // directly, so deleting it really does mean un-choosing it, freeing the pick for something
+  // else). A summon-gated companion (has maxInstancesByLevel, e.g. Ant-Man's ants) keeps its
+  // chosenCompIds entry forever once picked — Choose/Summon are decoupled there, so dismissing one
+  // instance must not make the Choose button for that type reappear; only Summon should be needed
+  // for any future instance. Without this distinction, a deleted always-present companion would
+  // otherwise get silently auto-recreated next time the parent's Companions tab renders
+  // (CompanionsTab.jsx auto-creates a sheet for any already-chosen pickable companion that doesn't
+  // have one).
   if (sheet.parentSheetId) {
-    const parent = await sheetsModel.findOneAndUpdate(
-      { _id: sheet.parentSheetId },
-      { $pull: { chosenCompIds: String(sheet.characterId) } },
-      { new: true }
-    )
-    if (parent && global.io) global.io.emit('sheet:updated', { sheetId: String(parent._id), sheet: parent })
+    const forms = await formsModel.find({})
+    const form = forms.find(f => String(f._id) === String(sheet.formId))
+    const isSummoned = (form?.maxInstancesByLevel ?? []).length > 0
+    if (!isSummoned) {
+      const parent = await sheetsModel.findOneAndUpdate(
+        { _id: sheet.parentSheetId },
+        { $pull: { chosenCompIds: String(sheet.characterId) } },
+        { new: true }
+      )
+      if (parent && global.io) global.io.emit('sheet:updated', { sheetId: String(parent._id), sheet: parent })
+    }
   }
 
   return {}
