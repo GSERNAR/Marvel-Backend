@@ -286,8 +286,13 @@ const selectSheet = async (userId, tableId, sheetId) => {
   if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
 
   member.sheetId = String(sheetId)
+  // Companions always mirror whichever sheet is currently selected as primary — recomputed fresh
+  // (not merged) on every select, so switching away from a sheet drops its companions from the
+  // table in the same atomic step that picks up the new sheet's, rather than only ever adding.
+  const companionSheets = await sheetsModel.find({ parentSheetId: String(sheetId), userId }, '_id')
+  member.companionSheetIds = companionSheets.map(s => String(s._id))
   await table.save()
-  return { sheetId: member.sheetId }
+  return { sheetId: member.sheetId, companionSheetIds: member.companionSheetIds }
 }
 
 const addOaaSheet = async (oaaId, tableId, sheetId) => {
