@@ -6,6 +6,7 @@ const {
 } = require('../common/combatEffects')
 const { clearStatusForEndFight } = require('../common/statusEffects')
 const { applyShortRestToSheet, applyLongRestToSheet } = require('../common/rest')
+const { detachSheetFromTables } = require('./sheets')
 
 // Ported from frontend src/pages/my-sheets/sheetMechanics.js computeMaxPP()
 const computeMaxPP = (powerStat, level) => {
@@ -1116,7 +1117,21 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
   }
   if (body.heal != null && global.io) global.io.emit('combat:heal', { sheetId: String(sheetId) })
   const nowDead = (sheet.deathHp ?? 0) >= maxDeathHp
-  if (nowDead && !wasAlreadyDead && global.io) global.io.emit('combat:kill', { sheetId: String(sheetId) })
+  if (nowDead && !wasAlreadyDead) {
+    if (global.io) global.io.emit('combat:kill', { sheetId: String(sheetId) })
+    // Summoned companions auto-dismiss on death here too — the OAA's Combat Controls Damage
+    // button hits this endpoint, not updateSheet in controllers/sheets.js, so both death-detection
+    // points need the same rule (isSummoned = the companion's own form defines
+    // maxInstancesByLevel; "always present" companions like Lockheed are left alone).
+    if (sheet.parentSheetId) {
+      const compForm = await findFormById(sheet.formId)
+      if ((compForm?.maxInstancesByLevel ?? []).length > 0) {
+        await sheetsModel.deleteOne({ _id: sheetId })
+        await detachSheetFromTables(sheetId)
+        await sheetsModel.updateOne({ _id: sheet.parentSheetId }, { $pull: { chosenCompIds: String(sheet.characterId) } })
+      }
+    }
+  }
   if (statusJustApplied && global.io) global.io.emit('status:applied', { sheetId: String(sheetId), statusId: statusJustApplied })
   return { currentHp: sheet.currentHp, shieldHp: sheet.shieldHp ?? 0, deathHp: sheet.deathHp ?? 0, ironManDebug }
 }

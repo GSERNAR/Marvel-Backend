@@ -1,4 +1,4 @@
-const { sheetsModel, tablesModel } = require('../models')
+const { sheetsModel, tablesModel, formsModel } = require('../models')
 const { ApiError, ErrorCode } = require('../common/apiError')
 
 const getSheets = async (userId) => {
@@ -13,6 +13,64 @@ const getSheet = async (userId, sheetId) => {
 
 const createSheet = async (userId, body) => {
   return sheetsModel.create({ ...body, userId })
+}
+
+// Removes every reference to a sheet from every table it could be attached to — used whenever a
+// sheet stops existing on a table (deleted outright, or a summoned companion auto-dismissed on
+// death). Covers every place a sheetId can live on a Table document: a member's own primary
+// sheet, a member's pending sheet request, a member's companion sheets, the OAA's NPC list, a
+// per-sheet combat role, an OAA-tagged-Player's own initiative roll, and a published initiative
+// order entry. Without this, a deleted/auto-dismissed sheet leaves dangling ids around that show
+// up as broken cards or silently-stuck state elsewhere.
+const detachSheetFromTables = async (sheetId) => {
+  const sid = String(sheetId)
+
+  await tablesModel.updateMany(
+    { 'members.sheetId': sid },
+    { $set: { 'members.$[m].sheetId': null } },
+    { arrayFilters: [{ 'm.sheetId': sid }] }
+  )
+  await tablesModel.updateMany(
+    { 'members.pendingSheets.sheetId': sid },
+    { $pull: { 'members.$[].pendingSheets': { sheetId: sid } } }
+  )
+  await tablesModel.updateMany(
+    { 'members.companionSheetIds': sid },
+    { $pull: { 'members.$[].companionSheetIds': sid } }
+  )
+  await tablesModel.updateMany(
+    { oaaSheetIds: sid },
+    { $pull: { oaaSheetIds: sid } }
+  )
+
+  // combatRoles / initiative.sheetRolls / initiative.order live on Mixed-type fields, so a plain
+  // $unset-by-dynamic-key update + explicit markModified is the safe way to touch them.
+  const tablesToClean = await tablesModel.find({
+    $or: [
+      { [`combatRoles.${sid}`]: { $exists: true } },
+      { [`initiative.sheetRolls.${sid}`]: { $exists: true } },
+      { 'initiative.order': { $elemMatch: { sheetId: sid } } },
+    ],
+  })
+  for (const table of tablesToClean) {
+    let changed = false
+    if (table.combatRoles && table.combatRoles[sid] !== undefined) {
+      delete table.combatRoles[sid]
+      table.markModified('combatRoles')
+      changed = true
+    }
+    if (table.initiative?.sheetRolls?.[sid] !== undefined) {
+      delete table.initiative.sheetRolls[sid]
+      table.markModified('initiative')
+      changed = true
+    }
+    if (Array.isArray(table.initiative?.order) && table.initiative.order.some(e => String(e.sheetId) === sid)) {
+      table.initiative.order = table.initiative.order.filter(e => String(e.sheetId) !== sid)
+      table.markModified('initiative')
+      changed = true
+    }
+    if (changed) await table.save()
+  }
 }
 
 const updateSheet = async (userId, sheetId, body) => {
@@ -42,7 +100,28 @@ const updateSheet = async (userId, sheetId, body) => {
   if (global.io) global.io.emit('sheet:updated', { sheetId: String(sheetId), sheet })
   if (maxDeathHp !== null) {
     const nowDead = (sheet.deathHp ?? 0) >= maxDeathHp
-    if (nowDead && !wasAlreadyDead && global.io) global.io.emit('combat:kill', { sheetId: String(sheetId) })
+    if (nowDead && !wasAlreadyDead) {
+      if (global.io) global.io.emit('combat:kill', { sheetId: String(sheetId) })
+
+      // Summoned companions (parentSheetId set, and their own form defines maxInstancesByLevel —
+      // same isSummoned rule CompanionsTab.jsx uses to decide whether a companion needs an
+      // explicit Summon button) are auto-dismissed the instant they die, same as the player
+      // clicking Dismiss manually. "Always present" companions (no maxInstancesByLevel, e.g.
+      // Lockheed) are left alone — they behave like any normal character sheet and can be healed
+      // back up. The response below still returns the (now-deleted) sheet object as normal, so
+      // the caller sees the fatal update that triggered this; the deletion is a pure side effect.
+      if (sheet.parentSheetId) {
+        // forms can have non-ObjectId legacy _ids that break findById's auto-cast — fetch-all +
+        // string compare instead, matching findFormById in controllers/tables.js.
+        const forms = await formsModel.find({})
+        const form = forms.find(f => String(f._id) === String(sheet.formId))
+        if ((form?.maxInstancesByLevel ?? []).length > 0) {
+          await sheetsModel.deleteOne({ _id: sheetId })
+          await detachSheetFromTables(sheetId)
+          await sheetsModel.updateOne({ _id: sheet.parentSheetId }, { $pull: { chosenCompIds: String(sheet.characterId) } })
+        }
+      }
+    }
   }
   return sheet
 }
@@ -51,18 +130,7 @@ const deleteSheet = async (userId, sheetId) => {
   const sheet = await sheetsModel.findOneAndDelete({ _id: sheetId, userId })
   if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
 
-  // Companion sheets can be auto-attached to a table either as a member's companion slot
-  // (addCompanionSheet) or, when the parent is an OAA's own NPC sheet, straight into oaaSheetIds
-  // (same path any NPC uses) — deleting one must detach it from whichever it ended up in, so it
-  // stops showing up (and doesn't leave a dangling id) on the table.
-  await tablesModel.updateMany(
-    { 'members.companionSheetIds': String(sheetId) },
-    { $pull: { 'members.$[].companionSheetIds': String(sheetId) } }
-  )
-  await tablesModel.updateMany(
-    { oaaSheetIds: String(sheetId) },
-    { $pull: { oaaSheetIds: String(sheetId) } }
-  )
+  await detachSheetFromTables(sheetId)
 
   // If this was a companion sheet, un-mark it as chosen on the parent — otherwise a deleted
   // pickable companion (chosenCompIds still holding its id) gets silently auto-recreated the
@@ -81,4 +149,4 @@ const deleteSheet = async (userId, sheetId) => {
   return {}
 }
 
-module.exports = { getSheets, getSheet, createSheet, updateSheet, deleteSheet }
+module.exports = { getSheets, getSheet, createSheet, updateSheet, deleteSheet, detachSheetFromTables }
