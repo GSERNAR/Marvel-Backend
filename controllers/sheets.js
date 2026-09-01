@@ -73,6 +73,25 @@ const detachSheetFromTables = async (sheetId) => {
   }
 }
 
+// Deletes a summoned companion (isSummoned = its own form defines maxInstancesByLevel — the same
+// rule CompanionsTab.jsx uses to decide whether a companion needs an explicit Summon button) and
+// fully detaches it from every table. "Always present" companions (no maxInstancesByLevel, e.g.
+// Lockheed) are left alone by this — false is returned and the sheet is untouched, so it behaves
+// like any normal character sheet. Shared by both death-detection points below.
+const dismissSummonedCompanionIfDead = async (sheet) => {
+  if (!sheet.parentSheetId) return false
+  // forms can have non-ObjectId legacy _ids that break findById's auto-cast — fetch-all + string
+  // compare instead, matching findFormById in controllers/tables.js.
+  const forms = await formsModel.find({})
+  const form = forms.find(f => String(f._id) === String(sheet.formId))
+  if ((form?.maxInstancesByLevel ?? []).length === 0) return false
+  await sheetsModel.deleteOne({ _id: sheet._id })
+  await detachSheetFromTables(sheet._id)
+  await sheetsModel.updateOne({ _id: sheet.parentSheetId }, { $pull: { chosenCompIds: String(sheet.characterId) } })
+  if (global.io) global.io.emit('combat:kill', { sheetId: String(sheet._id) })
+  return true
+}
+
 const updateSheet = async (userId, sheetId, body) => {
   delete body._id
   delete body.userId
@@ -98,30 +117,22 @@ const updateSheet = async (userId, sheetId, body) => {
   )
   if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
   if (global.io) global.io.emit('sheet:updated', { sheetId: String(sheetId), sheet })
+
+  // Summoned companions ignore the normal deathHp/overkill system entirely — "no death rules",
+  // they die and delete the instant their HP hits 0. Only checked when this update actually
+  // touched currentHp: sheet.currentHp can otherwise still be its schema-default null, which
+  // means "full HP" by convention elsewhere in this app, NOT 0 — gating on body.currentHp having
+  // been provided avoids false-triggering on unrelated updates. The response below still returns
+  // the (now-deleted) sheet object as normal, so the caller sees the fatal update that triggered
+  // this; the deletion is a pure side effect.
+  if (body.currentHp !== undefined && sheet.currentHp <= 0) {
+    const dismissed = await dismissSummonedCompanionIfDead(sheet)
+    if (dismissed) return sheet
+  }
+
   if (maxDeathHp !== null) {
     const nowDead = (sheet.deathHp ?? 0) >= maxDeathHp
-    if (nowDead && !wasAlreadyDead) {
-      if (global.io) global.io.emit('combat:kill', { sheetId: String(sheetId) })
-
-      // Summoned companions (parentSheetId set, and their own form defines maxInstancesByLevel —
-      // same isSummoned rule CompanionsTab.jsx uses to decide whether a companion needs an
-      // explicit Summon button) are auto-dismissed the instant they die, same as the player
-      // clicking Dismiss manually. "Always present" companions (no maxInstancesByLevel, e.g.
-      // Lockheed) are left alone — they behave like any normal character sheet and can be healed
-      // back up. The response below still returns the (now-deleted) sheet object as normal, so
-      // the caller sees the fatal update that triggered this; the deletion is a pure side effect.
-      if (sheet.parentSheetId) {
-        // forms can have non-ObjectId legacy _ids that break findById's auto-cast — fetch-all +
-        // string compare instead, matching findFormById in controllers/tables.js.
-        const forms = await formsModel.find({})
-        const form = forms.find(f => String(f._id) === String(sheet.formId))
-        if ((form?.maxInstancesByLevel ?? []).length > 0) {
-          await sheetsModel.deleteOne({ _id: sheetId })
-          await detachSheetFromTables(sheetId)
-          await sheetsModel.updateOne({ _id: sheet.parentSheetId }, { $pull: { chosenCompIds: String(sheet.characterId) } })
-        }
-      }
-    }
+    if (nowDead && !wasAlreadyDead && global.io) global.io.emit('combat:kill', { sheetId: String(sheetId) })
   }
   return sheet
 }
@@ -149,4 +160,4 @@ const deleteSheet = async (userId, sheetId) => {
   return {}
 }
 
-module.exports = { getSheets, getSheet, createSheet, updateSheet, deleteSheet, detachSheetFromTables }
+module.exports = { getSheets, getSheet, createSheet, updateSheet, deleteSheet, detachSheetFromTables, dismissSummonedCompanionIfDead }
