@@ -303,8 +303,16 @@ const addOaaSheet = async (oaaId, tableId, sheetId) => {
   const sheet = await sheetsModel.findOne({ _id: sheetId, userId: oaaId })
   if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
 
-  if (!table.oaaSheetIds.map(String).includes(String(sheetId))) {
-    table.oaaSheetIds.push(String(sheetId))
+  // Any companion sheets this NPC already has (created before it was added here — e.g. via its
+  // own Companions tab auto-create) attach too, same as the sheet itself. Mirrors selectSheet's
+  // companion recompute for player-selected sheets; addOaaSheet only ever added the one sheetId
+  // requested, silently leaving pre-existing companions stranded off the table.
+  const companionSheets = await sheetsModel.find({ parentSheetId: String(sheetId), userId: oaaId }, '_id')
+  const idsToAdd = [String(sheetId), ...companionSheets.map(s => String(s._id))]
+  const existing = new Set(table.oaaSheetIds.map(String))
+  const newIds = idsToAdd.filter(id => !existing.has(id))
+  if (newIds.length > 0) {
+    table.oaaSheetIds.push(...newIds)
     await table.save()
   }
   return { oaaSheetIds: table.oaaSheetIds }
