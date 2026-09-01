@@ -849,6 +849,7 @@ const clearInitiative = async (oaaId, tableId) => {
 function getAllTableSheetIds(table) {
   return new Set([
     ...table.members.filter(m => m.status === 'accepted' && m.sheetId).map(m => String(m.sheetId)),
+    ...table.members.filter(m => m.status === 'accepted').flatMap(m => (m.companionSheetIds ?? []).map(String)),
     ...(table.oaaSheetIds ?? []).map(String),
   ])
 }
@@ -965,6 +966,7 @@ const setCombatRole = async (oaaId, tableId, sheetId, role) => {
 
   const validIds = new Set([
     ...table.members.filter(m => m.sheetId).map(m => String(m.sheetId)),
+    ...table.members.flatMap(m => (m.companionSheetIds || []).map(String)),
     ...table.oaaSheetIds.map(String),
   ])
   if (!validIds.has(String(sheetId))) throw new ApiError(ErrorCode.FORBIDDEN, 'Sheet not in table')
@@ -987,6 +989,7 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
 
   const validIds = new Set([
     ...table.members.filter(m => m.sheetId).map(m => String(m.sheetId)),
+    ...table.members.flatMap(m => (m.companionSheetIds || []).map(String)),
     ...table.oaaSheetIds.map(String),
   ])
   if (!validIds.has(String(sheetId))) throw new ApiError(ErrorCode.FORBIDDEN, 'Sheet not in table')
@@ -1303,6 +1306,8 @@ const grantCredits = async (oaaId, tableId, sheetId, amount) => {
   if (!table) throw new ApiError(ErrorCode.NOT_FOUND, 'Table not found')
   if (String(table.oaaId) !== String(oaaId)) throw new ApiError(ErrorCode.FORBIDDEN, 'OAA only')
 
+  // Companions never get their own S.H.I.E.L.D. Credits pool — grants only ever target a
+  // primary/NPC sheet, same as before companions could be table combatants at all.
   const validIds = new Set([
     ...table.members.filter(m => m.sheetId).map(m => String(m.sheetId)),
     ...table.oaaSheetIds.map(String),
@@ -1336,6 +1341,8 @@ const transferCredits = async (userId, tableId, fromSheetId, toSheetId, amount) 
   const isOwnMemberSheet = !!member && String(member.sheetId) === String(fromSheetId)
   if (!isOwnNpc && !isOwnMemberSheet) throw new ApiError(ErrorCode.FORBIDDEN, 'You can only send credits from your own sheet')
 
+  // Same as grantCredits — companions aren't a valid credits recipient either, only
+  // primary/NPC sheets.
   const validTargets = new Set([
     ...table.members.filter(m => m.sheetId).map(m => String(m.sheetId)),
     ...table.oaaSheetIds.map(String),
