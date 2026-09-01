@@ -1084,6 +1084,10 @@ const oaaSheetCombatUpdate = async (oaaId, tableId, sheetId, body) => {
 
 const MARKET_KEYS = new Set(['shield', 'tinkerer', 'emporium', 'masque'])
 
+// Max spare ammo a sheet can hold per weapon type — keep in sync with frontend
+// InventoryTab.jsx's AMMO_INVENTORY_CAP and my-tables/TableMarkets.jsx's copy.
+const AMMO_INVENTORY_CAP = { magazine: 5, pellet: 10 }
+
 const findModulesByIds = async (ids) => {
   if (!ids || ids.length === 0) return []
   const idSet = new Set(ids.map(String))
@@ -1202,9 +1206,16 @@ const buyFromMarket = async (userId, tableId, marketKey, slotId, buyerSheetId) =
   } else if (slot.entryType === 'ammo') {
     // Ported from Marvel-Frontend/src/pages/my-tables/marketGenerator.js's buildAmmoSlot — grants
     // the rolled quantity of spare magazines/pellets straight into the shared ammoInventory,
-    // same field the sheet's own Ammo Inventory panel (InventoryTab.jsx) and Long Rest top-up read/write.
+    // same field the sheet's own Ammo Inventory panel (InventoryTab.jsx) and Long Rest top-up
+    // read/write. Capped the same as manual +1 in that panel (5 magazines / 10 pellets per
+    // weapon) — reject rather than silently clamp, so credits aren't spent for nothing.
     const key = slot.weaponKey
-    sheet.ammoInventory = { ...(sheet.ammoInventory ?? {}), [key]: (sheet.ammoInventory?.[key] ?? 0) + (Number(slot.quantity) || 0) }
+    const cap = AMMO_INVENTORY_CAP[slot.ammoKind]
+    const current = sheet.ammoInventory?.[key] ?? 0
+    if (cap != null && current + (Number(slot.quantity) || 0) > cap) {
+      throw new ApiError(ErrorCode.BAD_REQUEST, 'Would exceed max ammo capacity for that weapon')
+    }
+    sheet.ammoInventory = { ...(sheet.ammoInventory ?? {}), [key]: current + (Number(slot.quantity) || 0) }
   } else {
     const materials = [...(sheet.materials ?? [])]
     const existing = materials.find(m => normalizeMaterialName(m.name) === normalizeMaterialName(slot.name) && m.category === slot.category)
