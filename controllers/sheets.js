@@ -88,7 +88,14 @@ const dismissSummonedCompanionIfDead = async (sheet) => {
   await sheetsModel.deleteOne({ _id: sheet._id })
   await detachSheetFromTables(sheet._id)
   await sheetsModel.updateOne({ _id: sheet.parentSheetId }, { $pull: { chosenCompIds: String(sheet.characterId) } })
-  if (global.io) global.io.emit('combat:kill', { sheetId: String(sheet._id) })
+  if (global.io) {
+    global.io.emit('combat:kill', { sheetId: String(sheet._id) })
+    // Distinct from combat:kill (which also fires for a normal, still-very-much-existing "Dead"
+    // character) — this is what tells every connected client's SheetsContext to actually drop the
+    // sheet from its cached list, instead of leaving a stale entry clickable in the Companions tab
+    // / My Sheets grid / Combat Controls until each view's own polling happens to notice the 404.
+    global.io.emit('sheet:deleted', { sheetId: String(sheet._id) })
+  }
   return true
 }
 
@@ -142,6 +149,7 @@ const deleteSheet = async (userId, sheetId) => {
   if (!sheet) throw new ApiError(ErrorCode.NOT_FOUND, 'Sheet not found')
 
   await detachSheetFromTables(sheetId)
+  if (global.io) global.io.emit('sheet:deleted', { sheetId: String(sheetId) })
 
   // If this was a companion sheet, un-mark it as chosen on the parent — otherwise a deleted
   // pickable companion (chosenCompIds still holding its id) gets silently auto-recreated the
