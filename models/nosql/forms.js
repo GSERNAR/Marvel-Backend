@@ -91,6 +91,12 @@ const FormScheme = new Schema(
             type: Array,
             default: []
         },
+        // A single Summon click creates this many instances at once, still for just one
+        // summonCost total (e.g. Squirrel Girl's squirrels: 1 PP summons 2 at a time).
+        instancesPerSummon: {
+            type: Number,
+            default: 1
+        },
         // Companions that must be chosen via progression picks before they can be summoned
         pickablecomp: [{
             type: String
