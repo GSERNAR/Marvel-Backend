@@ -70,6 +70,11 @@ const FormScheme = new Schema(
         vehicle: [{
             type: String
         }],
+        // Basic-equipment weapon keys (e.g. 'Pistol', 'assaultrifle', 'C4') read by the
+        // frontend inventory's WEAPONS_CATALOG, matched case-insensitively.
+        weapons: [{
+            type: String
+        }],
         noSkillUpgrade: {
             type: Boolean,
             default: false

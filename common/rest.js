@@ -53,10 +53,14 @@ const RELOAD_CAPACITY = {
   MACHINE: 100,
 }
 
+// Weapon attachments that change magazine size (frontend sheetMechanics.js WEAPON_ATTACHMENTS.extraAmmo)
+const ATTACHMENT_EXTRA_AMMO = { 'Extended Magazine': 10 }
+
 function reloadWeaponsOnLongRest(equippedWeapons) {
   return (equippedWeapons ?? []).map((w) => {
     const capacity = RELOAD_CAPACITY[w?.key]
-    return capacity != null ? { ...w, ammo: capacity } : w
+    if (capacity == null) return w
+    return { ...w, ammo: capacity + (ATTACHMENT_EXTRA_AMMO[w.attachment] ?? 0) }
   })
 }
 
